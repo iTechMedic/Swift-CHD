@@ -10,7 +10,7 @@ final class ConversionViewModel: ObservableObject {
     // MARK: - Single File Mode
     @Published var conversionType: ConversionType = .isoToChd {
         didSet {
-            resetOptionsForType()
+            resetForNewConversionType()
         }
     }
 
@@ -84,6 +84,26 @@ final class ConversionViewModel: ObservableObject {
         Task {
             await verifyCHDMan()
         }
+    }
+
+    func resetForNewConversionType() {
+        // Reset options to defaults for the new conversion type
+        resetOptionsForType()
+        
+        // Clear all file selections
+        inputURL = nil
+        outputURL = nil
+        
+        // Clear batch items and settings
+        batchItems.removeAll()
+        batchOutputDirectory = nil
+        batchSummary = nil
+        
+        // Clear console output and status
+        consoleOutput = ""
+        errorMessage = nil
+        statusLine = ""
+        progress = 0
     }
 
     func resetOptionsForType() {
