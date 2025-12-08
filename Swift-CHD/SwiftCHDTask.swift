@@ -90,12 +90,14 @@ enum SwiftCHDOptionType: Hashable {
 }
 
 struct SwiftCHDOption: Identifiable, Hashable {
-    let id = UUID()
     var key: String
     var value: String?
     var help: String
     var type: SwiftCHDOptionType = .text
     var isEnabled: Bool = true
+    
+    // Use key as the identifier so SwiftUI can track options consistently
+    var id: String { key }
 
     var asArguments: [String] {
         if let value, !value.isEmpty {
@@ -108,13 +110,21 @@ struct SwiftCHDOption: Identifiable, Hashable {
         }
     }
     
-    // For Hashable conformance
+    // For Hashable conformance - compare all fields for proper change detection
     static func == (lhs: SwiftCHDOption, rhs: SwiftCHDOption) -> Bool {
-        lhs.id == rhs.id
+        lhs.key == rhs.key &&
+        lhs.value == rhs.value &&
+        lhs.help == rhs.help &&
+        lhs.type == rhs.type &&
+        lhs.isEnabled == rhs.isEnabled
     }
     
     func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
+        hasher.combine(key)
+        hasher.combine(value)
+        hasher.combine(help)
+        hasher.combine(type)
+        hasher.combine(isEnabled)
     }
 }
 
