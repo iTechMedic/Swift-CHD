@@ -151,17 +151,20 @@ struct ContentView: View {
                                     
                                 case .text:
                                     TextField("value", text: Binding(
-                                        get: { opt.value ?? "" },
-                                        set: { opt.value = $0.isEmpty ? nil : $0 }
+                                        get: { $opt.value.wrappedValue ?? "" },
+                                        set: { $opt.value.wrappedValue = $0.isEmpty ? nil : $0 }
                                     ))
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 140)
                                     .disabled(!opt.isEnabled)
                                     
                                 case .dropdown(let choices):
-                                    Picker("", selection: $opt.value) {
+                                    Picker("", selection: Binding(
+                                        get: { $opt.value.wrappedValue ?? (choices.first ?? "") },
+                                        set: { $opt.value.wrappedValue = $0 }
+                                    )) {
                                         ForEach(choices, id: \.self) { choice in
-                                            Text(choice).tag(choice as String?)
+                                            Text(choice).tag(choice)
                                         }
                                     }
                                     .pickerStyle(.menu)
@@ -189,6 +192,7 @@ struct ContentView: View {
                             }
                         }
                         .padding(.vertical, 4)
+                        .id("\(opt.key)-\(opt.isEnabled)")
                     }
                 }
                 .padding(8)
