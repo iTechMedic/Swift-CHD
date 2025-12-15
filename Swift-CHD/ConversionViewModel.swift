@@ -1,12 +1,11 @@
 import Foundation
-import Foundation
 import Combine
 
 @MainActor
 final class ConversionViewModel: ObservableObject {
     // MARK: - Conversion Mode
     @Published var isBatchMode: Bool = false
-    
+
     // MARK: - Single File Mode
     @Published var conversionType: ConversionType = .isoToChd {
         didSet {
@@ -16,13 +15,13 @@ final class ConversionViewModel: ObservableObject {
 
     @Published var inputURL: URL?
     @Published var outputURL: URL?
-    
+
     // MARK: - Batch Mode
     @Published var batchItems: [BatchConversionItem] = []
     @Published var batchConfig = BatchConversionConfig()
     @Published var batchOutputDirectory: URL?
     @Published var batchSummary: BatchSummary?
-    
+
     // MARK: - Common Settings
     @Published var chdmanPath: String = "chdman"
     @Published var options: [SwiftCHDOption] = []
@@ -38,39 +37,6 @@ final class ConversionViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var consoleOutput: String = ""
 
-    // Known flags catalog per conversion type
-    let knownOptions: [ConversionType: [(String, String?, String, SwiftCHDOptionType)]] = [
-        .isoToChd: [
-            ("-c", "cd", "Compression codec", .dropdown(["cd", "cdlz", "cdzl", "cdfl"])),
-            ("-hs", "", "Hunk size in bytes", .text),
-            ("-f", "", "Force overwrite", .flag),
-            ("-np", "", "Proceed if not perfect", .flag)
-        ],
-        .cueToChd: [
-            ("-c", "cd", "Compression codec", .dropdown(["cd", "cdlz", "cdzl", "cdfl"])),
-            ("-hs", "", "Hunk size in bytes", .text),
-            ("-f", "", "Force overwrite", .flag),
-            ("-np", "", "Proceed if not perfect", .flag)
-        ],
-        .gdiToChd: [
-            ("-c", "cd", "Compression codec", .dropdown(["cd", "cdlz", "cdzl", "cdfl"])),
-            ("-hs", "", "Hunk size in bytes", .text),
-            ("-f", "", "Force overwrite", .flag),
-            ("-np", "", "Proceed if not perfect", .flag)
-        ],
-        .chdToIso: [
-            ("-f", "", "Force overwrite", .flag)
-        ],
-        .chdToCue: [
-            ("-f", "", "Force overwrite", .flag),
-            ("-ob", "", "Output BIN filename", .text)
-        ],
-        .chdToGdi: [
-            ("-f", "", "Force overwrite", .flag),
-            ("-ob", "", "Output BIN filename", .text)
-        ]
-    ]
-
     @Published var selectedKnownOptionKey: String = "-c"
     @Published var chdmanVerified: Bool = false
     @Published var chdmanNotFoundHelp: String? = nil
@@ -79,7 +45,7 @@ final class ConversionViewModel: ObservableObject {
 
     init() {
         resetOptionsForType()
-        
+
         // Kick off verification via Swift Concurrency
         Task {
             await verifyCHDMan()
@@ -89,16 +55,16 @@ final class ConversionViewModel: ObservableObject {
     func resetForNewConversionType() {
         // Reset options to defaults for the new conversion type
         resetOptionsForType()
-        
+
         // Clear all file selections
         inputURL = nil
         outputURL = nil
-        
+
         // Clear batch items and settings
         batchItems.removeAll()
         batchOutputDirectory = nil
         batchSummary = nil
-        
+
         // Clear console output and status
         consoleOutput = ""
         errorMessage = nil
@@ -111,7 +77,7 @@ final class ConversionViewModel: ObservableObject {
     }
 
     func addSelectedOption() {
-        let list = knownOptions[conversionType] ?? []
+        let list = ConversionType.knownOptions[conversionType] ?? []
         guard let match = list.first(where: { $0.0 == selectedKnownOptionKey }) else { return }
         let opt = SwiftCHDOption(key: match.0, value: match.1, help: match.2, type: match.3)
         // Avoid duplicates by key
@@ -123,17 +89,17 @@ final class ConversionViewModel: ObservableObject {
     func verifyCHDMan() async {
         // Run verification off the main actor to avoid blocking
         var path = chdmanPath.trimmingCharacters(in: .whitespaces)
-        
+
         // Auto-correct if user just entered a directory path
         if path.hasSuffix("/bin") || path.hasSuffix("/bin/") {
             path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chdman"
         }
-        
+
         let (foundPath, helpText, verified) = await Task.detached {
             var foundPath: String? = nil
             var helpText: String? = nil
             var verified = false
-            
+
             // If path is absolute and exists
             if path.hasPrefix("/") {
                 if FileManager.default.isExecutableFile(atPath: path) {
@@ -141,7 +107,7 @@ final class ConversionViewModel: ObservableObject {
                     verified = true
                 }
             }
-            
+
             if !verified {
                 // Check common Homebrew locations
                 let candidates = [
@@ -154,7 +120,7 @@ final class ConversionViewModel: ObservableObject {
                     break
                 }
             }
-            
+
             if !verified {
                 // Try PATH lookup via /usr/bin/env bash to get proper shell environment
                 let bash = Process()
@@ -176,35 +142,35 @@ final class ConversionViewModel: ObservableObject {
                     }
                 } catch { }
             }
-            
+
             if !verified {
                 helpText = """
                 chdman was not found in the system PATH.
-                
+
                 If you have Homebrew installed:
-                
+
                 1. Open Terminal and run:
                    brew install mame
-                
+
                 2. After installation, chdman should be at:
-                   • Apple Silicon: /opt/homebrew/bin/chdman
-                   • Intel Mac: /usr/local/bin/chdman
-                
+                   - Apple Silicon: /opt/homebrew/bin/chdman
+                   - Intel Mac: /usr/local/bin/chdman
+
                 3. Click the "Verify" button again, or manually enter the full path above.
-                
+
                 If you don't have Homebrew:
-                
+
                 1. Install Homebrew first:
                    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-                
+
                 2. Then install MAME (which includes chdman):
                    brew install mame
                 """
             }
-            
+
             return (foundPath, helpText, verified)
         }.value
-        
+
         // Publish results (already on MainActor due to function isolation)
         self.chdmanNotFoundHelp = helpText
         if let foundPath {
@@ -219,7 +185,7 @@ final class ConversionViewModel: ObservableObject {
         }
 
         var args: [String] = []
-        
+
         // Use the chdmanCommand from ConversionType
         args.append(conversionType.chdmanCommand)
 
@@ -244,31 +210,31 @@ final class ConversionViewModel: ObservableObject {
             await startSingle()
         }
     }
-    
+
     // MARK: - Batch Mode Operations
-    
+
     func addBatchFiles(_ urls: [URL]) {
         for url in urls {
             // Generate output URL based on conversion type
             let outputURL = generateOutputURL(for: url)
             let item = BatchConversionItem(inputURL: url, outputURL: outputURL)
-            
+
             // Avoid duplicates
             if !batchItems.contains(where: { $0.inputURL == url }) {
                 batchItems.append(item)
             }
         }
     }
-    
+
     func removeBatchItem(_ item: BatchConversionItem) {
         batchItems.removeAll { $0.id == item.id }
     }
-    
+
     func clearBatchItems() {
         batchItems.removeAll()
         batchSummary = nil
     }
-    
+
     func generateOutputURL(for inputURL: URL) -> URL {
         let baseDir: URL
         if let batchOutputDir = batchOutputDirectory {
@@ -276,12 +242,12 @@ final class ConversionViewModel: ObservableObject {
         } else {
             baseDir = inputURL.deletingLastPathComponent()
         }
-        
+
         let baseName = inputURL.deletingPathExtension().lastPathComponent
         let newExtension = conversionType.outputExtension
         return baseDir.appendingPathComponent("\(baseName).\(newExtension)")
     }
-    
+
     func updateBatchOutputDirectory(_ url: URL?) {
         batchOutputDirectory = url
         // Update all existing items' output URLs
@@ -289,25 +255,25 @@ final class ConversionViewModel: ObservableObject {
             batchItems[index].outputURL = generateOutputURL(for: batchItems[index].inputURL)
         }
     }
-    
+
     private func startBatch() async {
         guard !isRunning else { return }
         guard !batchItems.isEmpty else {
             errorMessage = "No files added for batch conversion"
             return
         }
-        
+
         isRunning = true
         progress = 0
         errorMessage = nil
         batchSummary = nil
-        
+
         // Initialize console output
         consoleOutput = "=== BATCH CONVERSION STARTED ===\n"
         consoleOutput += "Mode: \(conversionType.title)\n"
         consoleOutput += "Files: \(batchItems.count)\n"
         consoleOutput += String(repeating: "=", count: 60) + "\n\n"
-        
+
         do {
             let summary = try await task.runBatch(
                 chdmanPath: chdmanPath,
@@ -321,21 +287,21 @@ final class ConversionViewModel: ObservableObject {
                     guard let self = self else { return }
                     if let index = self.batchItems.firstIndex(where: { $0.id == updatedItem.id }) {
                         self.batchItems[index] = updatedItem
-                        
+
                         // Log to console
                         let fileName = updatedItem.inputURL.lastPathComponent
                         switch updatedItem.status {
                         case .processing:
-                            self.consoleOutput += "▶️ Processing: \(fileName)\n"
+                            self.consoleOutput += "Processing: \(fileName)\n"
                         case .completed:
-                            self.consoleOutput += "✅ Completed: \(fileName)\n"
+                            self.consoleOutput += "Completed: \(fileName)\n"
                         case .failed:
-                            self.consoleOutput += "❌ Failed: \(fileName)\n"
+                            self.consoleOutput += "Failed: \(fileName)\n"
                             if let error = updatedItem.errorMessage {
                                 self.consoleOutput += "   Error: \(error)\n"
                             }
                         case .skipped:
-                            self.consoleOutput += "⏭️ Skipped: \(fileName)\n"
+                            self.consoleOutput += "Skipped: \(fileName)\n"
                             if let reason = updatedItem.errorMessage {
                                 self.consoleOutput += "   Reason: \(reason)\n"
                             }
@@ -344,10 +310,10 @@ final class ConversionViewModel: ObservableObject {
                         }
                         self.consoleOutput += "\n"
                     }
-                    
+
                     // Update overall progress
-                    let completed = self.batchItems.filter { 
-                        $0.status == .completed || $0.status == .failed || $0.status == .skipped 
+                    let completed = self.batchItems.filter {
+                        $0.status == .completed || $0.status == .failed || $0.status == .skipped
                     }.count
                     self.progress = Double(completed) / Double(self.batchItems.count)
                 }
@@ -361,31 +327,31 @@ final class ConversionViewModel: ObservableObject {
                     self.statusLine = status
                 }
             }
-            
+
             batchSummary = summary
             consoleOutput += String(repeating: "=", count: 60) + "\n"
             consoleOutput += "=== BATCH CONVERSION COMPLETED ===\n"
             consoleOutput += summary.description + "\n"
             statusLine = "Batch completed: \(summary.succeeded)/\(summary.total) succeeded"
-            
+
         } catch {
             errorMessage = "Batch conversion error: \(error.localizedDescription)"
             consoleOutput += String(repeating: "=", count: 60) + "\n"
-            consoleOutput += "❌ BATCH ERROR: \(error.localizedDescription)\n"
+            consoleOutput += "BATCH ERROR: \(error.localizedDescription)\n"
         }
-        
+
         isRunning = false
     }
-    
+
     private func startSingle() async {
         guard !isRunning else { return }
-        
+
         // Store whether we started accessing resources
         var inputStarted = false
         var outputStarted = false
         var inputDirStarted = false
         var outputDirStarted = false
-        
+
         do {
             // Start accessing security-scoped resources for files
             if let inputURL = inputURL {
@@ -400,13 +366,13 @@ final class ConversionViewModel: ObservableObject {
                 let outputDir = outputURL.deletingLastPathComponent()
                 outputDirStarted = outputDir.startAccessingSecurityScopedResource()
             }
-            
+
             let args = try buildArguments()
             isRunning = true
             progress = 0
             statusLine = "Starting..."
             errorMessage = nil
-            
+
             // Clear and initialize console output
             let cmdLine = "\(chdmanPath) \(args.joined(separator: " "))"
             consoleOutput = "$ \(cmdLine)\n"
@@ -416,31 +382,31 @@ final class ConversionViewModel: ObservableObject {
                 Task { @MainActor in
                     if pct >= 0 { self?.progress = pct }
                     self?.statusLine = line
-                    
+
                     // Append to console output
                     if !line.isEmpty {
                         self?.consoleOutput += line + "\n"
                     }
                 }
             }
-            
+
             statusLine = "Conversion completed successfully!"
             consoleOutput += String(repeating: "=", count: 60) + "\n"
-            consoleOutput += "✅ SUCCESS: Conversion completed!\n"
+            consoleOutput += "SUCCESS: Conversion completed!\n"
             progress = 1.0
         } catch let error as NSError {
             // Log error to console
             consoleOutput += String(repeating: "=", count: 60) + "\n"
-            consoleOutput += "❌ ERROR: \(error.localizedDescription)\n"
-            
+            consoleOutput += "ERROR: \(error.localizedDescription)\n"
+
             // Provide more helpful error messages
             let errorCode = error.code
             let errorDomain = error.domain
-            
+
             if errorDomain == NSCocoaErrorDomain {
                 switch errorCode {
                 case NSFileReadNoPermissionError, NSFileWriteNoPermissionError:
-                    errorMessage = "Permission denied. Go to Xcode → Target → Signing & Capabilities → Remove 'App Sandbox'."
+                    errorMessage = "Permission denied. Go to Xcode -> Target -> Signing & Capabilities -> Remove 'App Sandbox'."
                 case NSFileNoSuchFileError:
                     errorMessage = "File not found. Please verify input file exists."
                 case NSFileWriteFileExistsError:
@@ -461,7 +427,7 @@ final class ConversionViewModel: ObservableObject {
                 errorMessage = error.localizedDescription
             }
         }
-        
+
         // Always stop accessing resources when done
         if inputStarted, let inputURL = inputURL {
             inputURL.stopAccessingSecurityScopedResource()
@@ -475,8 +441,7 @@ final class ConversionViewModel: ObservableObject {
         if outputDirStarted, let outputURL = outputURL {
             outputURL.deletingLastPathComponent().stopAccessingSecurityScopedResource()
         }
-        
+
         isRunning = false
     }
 }
-
