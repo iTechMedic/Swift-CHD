@@ -14,6 +14,7 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
   - ISO → CHD
   - BIN/CUE → CHD
   - GDI → CHD (Dreamcast)
+  - CDI → CHD (Dreamcast)
   - CHD → ISO
   - CHD → BIN/CUE
   - CHD → GDI
@@ -147,6 +148,10 @@ Ideal for converting multiple files at once.
 - Select the `.gdi` file as input
 - Make sure all associated track files are in the same directory
 
+#### Converting CDI to CHD
+- CDI is another Dreamcast disc image format (DiscJuggler)
+- Select the `.cdi` file as input
+
 #### Extracting CHD Files
 - When extracting CHD → BIN/CUE or CHD → GDI, multiple files may be created
 - The output path you specify will be the main file (cue or gdi)
@@ -158,7 +163,8 @@ Enable "Advanced Mode" in the Options section to access more chdman parameters:
 
 - **Hunk Size (`-hs`)**: Adjust the compression chunk size (advanced users only)
 - **Output BIN Filename (`-ob`)**: Specify custom output filename for BIN files when extracting
-- **Custom Arguments**: Add any additional chdman arguments manually
+- **Verify (`-v`)**: Verify the file after compression/extraction
+- **Proceed if not perfect (`-np`)**: Continue even if chdman detects a non-perfect source
 
 ### Troubleshooting
 
