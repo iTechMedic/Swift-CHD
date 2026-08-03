@@ -189,14 +189,13 @@ final class SwiftCHDTask {
         )
     }
 
-    /// Attempts to parse a percentage from typical chdman output lines like " 23% complete...".
+    /// Attempts to parse a percentage from typical chdman output lines like " 23.4% complete...".
     ///
     /// - Parameter line: A single line of output from chdman.
     /// - Returns: A value between 0.0 and 1.0 representing progress, or nil if not found.
     static func parsePercent(line: String) -> Double? {
-        // Find a number followed by %
-        // Matches up to 3 digits to cover 0-100%
-        let pattern = #"(\d{1,3})%"#
+        // Find a number (with optional decimal part) followed by %
+        let pattern = #"(\d{1,3}(?:\.\d+)?)%"#
         if let range = line.range(of: pattern, options: .regularExpression) {
             let numberPart = line[range].replacingOccurrences(of: "%", with: "")
             if let value = Double(numberPart) {

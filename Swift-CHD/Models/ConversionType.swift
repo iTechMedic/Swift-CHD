@@ -4,6 +4,7 @@ enum ConversionType: String, CaseIterable, Identifiable {
     case isoToChd
     case cueToChd
     case gdiToChd
+    case cdiToChd
     case chdToIso
     case chdToCue
     case chdToGdi
@@ -15,6 +16,7 @@ enum ConversionType: String, CaseIterable, Identifiable {
         case .isoToChd: return "ISO -> CHD"
         case .cueToChd: return "CUE -> CHD"
         case .gdiToChd: return "GDI -> CHD"
+        case .cdiToChd: return "CDI -> CHD"
         case .chdToIso: return "CHD -> ISO"
         case .chdToCue: return "CHD -> CUE"
         case .chdToGdi: return "CHD -> GDI"
@@ -26,6 +28,7 @@ enum ConversionType: String, CaseIterable, Identifiable {
         case .isoToChd: return "Convert single-track ISO to compressed CHD"
         case .cueToChd: return "Convert BIN/CUE (multi-track) to CHD"
         case .gdiToChd: return "Convert Dreamcast GDI to CHD"
+        case .cdiToChd: return "Convert Dreamcast CDI to CHD"
         case .chdToIso: return "Extract CHD to raw ISO"
         case .chdToCue: return "Extract CHD to BIN/CUE"
         case .chdToGdi: return "Extract CHD to Dreamcast GDI"
@@ -37,13 +40,14 @@ enum ConversionType: String, CaseIterable, Identifiable {
         case .isoToChd: return "iso"
         case .cueToChd: return "cue"
         case .gdiToChd: return "gdi"
+        case .cdiToChd: return "cdi"
         case .chdToIso, .chdToCue, .chdToGdi: return "chd"
         }
     }
 
     var outputExtension: String {
         switch self {
-        case .isoToChd, .cueToChd, .gdiToChd: return "chd"
+        case .isoToChd, .cueToChd, .gdiToChd, .cdiToChd: return "chd"
         case .chdToIso: return "iso"
         case .chdToCue: return "cue"
         case .chdToGdi: return "gdi"
@@ -52,7 +56,7 @@ enum ConversionType: String, CaseIterable, Identifiable {
 
     var chdmanCommand: String {
         switch self {
-        case .isoToChd, .cueToChd, .gdiToChd:
+        case .isoToChd, .cueToChd, .gdiToChd, .cdiToChd:
             return "createcd"
         case .chdToIso, .chdToCue, .chdToGdi:
             return "extractcd"
@@ -75,7 +79,7 @@ enum ConversionType: String, CaseIterable, Identifiable {
     // All available options for advanced users
     var advancedOptions: [SwiftCHDOption] {
         switch self {
-        case .isoToChd, .cueToChd, .gdiToChd:
+        case .isoToChd, .cueToChd, .gdiToChd, .cdiToChd:
             return [
                 SwiftCHDOption(key: "-c", value: "cd", help: "Compression codec", type: .dropdown(["cd", "cdlz", "cdzl", "cdfl"]), isEnabled: false),
                 SwiftCHDOption(key: "-hs", value: "", help: "Hunk size in bytes (e.g., 2048, 4096)", type: .text, isEnabled: false),
@@ -107,6 +111,12 @@ enum ConversionType: String, CaseIterable, Identifiable {
             ("-np", "", "Proceed if not perfect", .flag)
         ],
         .gdiToChd: [
+            ("-c", "cd", "Compression codec", .dropdown(["cd", "cdlz", "cdzl", "cdfl"])),
+            ("-hs", "", "Hunk size in bytes", .text),
+            ("-f", "", "Force overwrite", .flag),
+            ("-np", "", "Proceed if not perfect", .flag)
+        ],
+        .cdiToChd: [
             ("-c", "cd", "Compression codec", .dropdown(["cd", "cdlz", "cdzl", "cdfl"])),
             ("-hs", "", "Hunk size in bytes", .text),
             ("-f", "", "Force overwrite", .flag),
