@@ -13,7 +13,13 @@ final class ConversionViewModel: ObservableObject {
         }
     }
 
-    @Published var inputURL: URL?
+    @Published var inputURL: URL? {
+        didSet {
+            if let inputURL {
+                outputURL = defaultOutputURL(for: inputURL)
+            }
+        }
+    }
     @Published var outputURL: URL?
 
     // MARK: - Batch Mode
@@ -177,6 +183,14 @@ final class ConversionViewModel: ObservableObject {
             self.chdmanPath = foundPath
         }
         self.chdmanVerified = verified
+    }
+
+    /// Defaults Single File mode's output to the same folder as the input file, mirroring
+    /// Batch mode's "same as input files" default (see `generateOutputURL`).
+    private func defaultOutputURL(for inputURL: URL) -> URL {
+        let baseName = inputURL.deletingPathExtension().lastPathComponent
+        let ext = conversionType.outputExtension
+        return inputURL.deletingLastPathComponent().appendingPathComponent("\(baseName).\(ext)")
     }
 
     func buildArguments() throws -> [String] {
@@ -346,6 +360,12 @@ final class ConversionViewModel: ObservableObject {
     private func startSingle() async {
         guard !isRunning else { return }
 
+        // Snapshot the URLs in use for this run so security-scoped access start/stop stays
+        // balanced even if inputURL/outputURL are reset to nil after a successful conversion.
+        let runInputURL = inputURL
+        let runOutputURL = outputURL
+        var didSucceed = false
+
         // Store whether we started accessing resources
         var inputStarted = false
         var outputStarted = false
@@ -354,16 +374,16 @@ final class ConversionViewModel: ObservableObject {
 
         do {
             // Start accessing security-scoped resources for files
-            if let inputURL = inputURL {
-                inputStarted = inputURL.startAccessingSecurityScopedResource()
+            if let runInputURL {
+                inputStarted = runInputURL.startAccessingSecurityScopedResource()
                 // Also try to get access to parent directory
-                let inputDir = inputURL.deletingLastPathComponent()
+                let inputDir = runInputURL.deletingLastPathComponent()
                 inputDirStarted = inputDir.startAccessingSecurityScopedResource()
             }
-            if let outputURL = outputURL {
-                outputStarted = outputURL.startAccessingSecurityScopedResource()
+            if let runOutputURL {
+                outputStarted = runOutputURL.startAccessingSecurityScopedResource()
                 // Also try to get access to parent directory
-                let outputDir = outputURL.deletingLastPathComponent()
+                let outputDir = runOutputURL.deletingLastPathComponent()
                 outputDirStarted = outputDir.startAccessingSecurityScopedResource()
             }
 
@@ -394,6 +414,7 @@ final class ConversionViewModel: ObservableObject {
             consoleOutput += String(repeating: "=", count: 60) + "\n"
             consoleOutput += "SUCCESS: Conversion completed!\n"
             progress = 1.0
+            didSucceed = true
         } catch let error as NSError {
             // Log error to console
             consoleOutput += String(repeating: "=", count: 60) + "\n"
@@ -429,17 +450,24 @@ final class ConversionViewModel: ObservableObject {
         }
 
         // Always stop accessing resources when done
-        if inputStarted, let inputURL = inputURL {
-            inputURL.stopAccessingSecurityScopedResource()
+        if inputStarted, let runInputURL {
+            runInputURL.stopAccessingSecurityScopedResource()
         }
-        if outputStarted, let outputURL = outputURL {
-            outputURL.stopAccessingSecurityScopedResource()
+        if outputStarted, let runOutputURL {
+            runOutputURL.stopAccessingSecurityScopedResource()
         }
-        if inputDirStarted, let inputURL = inputURL {
-            inputURL.deletingLastPathComponent().stopAccessingSecurityScopedResource()
+        if inputDirStarted, let runInputURL {
+            runInputURL.deletingLastPathComponent().stopAccessingSecurityScopedResource()
         }
-        if outputDirStarted, let outputURL = outputURL {
-            outputURL.deletingLastPathComponent().stopAccessingSecurityScopedResource()
+        if outputDirStarted, let runOutputURL {
+            runOutputURL.deletingLastPathComponent().stopAccessingSecurityScopedResource()
+        }
+
+        // Reset selections after a successful conversion so the next file picked gets a
+        // fresh "same as input file" output default (console/progress are left as-is).
+        if didSucceed {
+            inputURL = nil
+            outputURL = nil
         }
 
         isRunning = false
