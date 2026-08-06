@@ -4,6 +4,11 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and release (e.g. v1.3)"
+        required: true
 
 permissions:
   contents: write
@@ -15,6 +20,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Build Release .app
         run: |
@@ -34,7 +41,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION="${GITHUB_REF_NAME#v}"
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}"
+          VERSION="${TAG#v}"
           APP_PATH="build/Build/Products/Release/Swift-CHD.app"
           STAGING_DIR="dmg-staging"
           DMG_NAME="Swift-CHD-${VERSION}.dmg"
@@ -53,13 +61,13 @@ jobs:
             "$DMG_NAME"
 
           echo "DMG_NAME=$DMG_NAME" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
 
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release upload "$TAG" "$DMG_NAME" --repo "${{ github.repository }}" --clobber
