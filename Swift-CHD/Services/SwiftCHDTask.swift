@@ -39,6 +39,11 @@ final class SwiftCHDTask {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        // chdman can prompt interactively (e.g. "not a perfect copy, proceed anyway?").
+        // With no stdin wired up, GUI apps inherit a stdin that never yields input, so
+        // chdman blocks forever with no error. Route stdin to /dev/null so any such
+        // prompt reads EOF immediately and chdman fails fast instead of hanging.
+        process.standardInput = FileHandle.nullDevice
 
         // A serial queue to synchronize progress parsing and reporting
         let progressQueue = DispatchQueue(label: "swiftchd.progress.queue")
@@ -154,6 +159,14 @@ final class SwiftCHDTask {
                 let lower = opt.key.lowercased()
                 if lower == "-i" || lower == "-o" { continue }
                 args += opt.asArguments
+            }
+
+            // Batch mode has no user present to answer chdman's interactive "not a
+            // perfect copy, proceed anyway?" prompt for createcd conversions (common
+            // with Dreamcast CDI dumps), so force -np unless the user already set it.
+            if conversionType.chdmanCommand == "createcd"
+                && !options.contains(where: { $0.key.lowercased() == "-np" && $0.isEnabled }) {
+                args.append("-np")
             }
 
             // Run the conversion
