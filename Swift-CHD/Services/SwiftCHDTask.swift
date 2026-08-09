@@ -1,3 +1,9 @@
+//  SwiftCHDTask.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import Foundation
 
 /// A class responsible for running the chdman command-line tool asynchronously,
@@ -46,10 +52,8 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
         Self.terminate(process)
     }
 
-    /// Records `process` as the one `cancel()` should act on.
-    ///
-    /// Kept synchronous and separate from `run()` because NSLock must not be held across an
-    /// await; `run()` is async, so it delegates its locking here.
+    /// Records `process` as the one `cancel()` should act on. Synchronous and separate from the
+    /// async `run()` because NSLock must not be held across an await.
     /// - Returns: true if cancellation was already requested and the caller must kill it.
     private func adoptRunningProcess(_ process: Process) -> Bool {
         stateLock.lock()
@@ -73,16 +77,58 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
         }
     }
 
+    // MARK: - Input preparation
+
+    /// Rewrites an input chdman cannot read - only DiscJuggler images today - into one it can.
+    /// Runs off the calling actor since it copies the whole disc, and polls `isCancelled`.
+    /// - Returns: The input to hand chdman, plus scratch for `CommandBuilder.cleanUp` to remove.
+    func prepareInput(
+        _ inputURL: URL,
+        conversionType: ConversionType,
+        onProgress: @escaping @Sendable (Double, String) -> Void
+    ) async throws -> CommandBuilder.PreparedInput {
+        guard CommandBuilder.requiresStaging(inputURL, conversionType: conversionType) else {
+            return .asIs(inputURL)
+        }
+        if isCancelled { throw Self.cancellationError() }
+
+        let share = CommandBuilder.cdiStagingProgressShare
+
+        return try await Task.detached(priority: .userInitiated) { [self] in
+            do {
+                let image = try CDIImage.read(at: inputURL)
+                onProgress(0, "DiscJuggler image: \(image.tracks.count) tracks in "
+                              + "\(image.sessionCount) session\(image.sessionCount == 1 ? "" : "s")")
+
+                let staged = try CDIStager.stage(
+                    image,
+                    from: inputURL,
+                    progress: { fraction in
+                        onProgress(fraction * share,
+                                   "Preparing tracks for chdman... \(Int(fraction * 100))% complete")
+                    },
+                    isCancelled: { self.isCancelled }
+                )
+
+                return CommandBuilder.PreparedInput(url: staged.gdiURL,
+                                                    scratch: [staged.directory],
+                                                    progressFloor: share)
+            } catch CDIError.cancelled {
+                throw Self.cancellationError()
+            } catch let error as CDIError {
+                throw NSError(
+                    domain: Self.errorDomain,
+                    code: ErrorCode.unsupportedInput.rawValue,
+                    userInfo: [NSLocalizedDescriptionKey: error.errorDescription ?? "\(error)"]
+                )
+            }
+        }.value
+    }
+
     // MARK: - Running chdman
 
-    /// Launches the `chdman` tool with given arguments and streams progress.
-    ///
-    /// - Parameters:
-    ///   - chdmanPath: Absolute path to the chdman executable. If just "chdman", relies on PATH.
-    ///   - arguments: Full argument vector, e.g. ["createcd", "-i", input, "-o", output, ...]
-    ///   - onProgress: Called with percentage 0.0...1.0 and the latest status line.
-    ///
-    /// - Throws: Error if the process fails to start, stalls, is cancelled, or exits non-zero.
+    /// Launches chdman and streams progress, calling `onProgress` with a fraction 0...1 - or -1
+    /// when the line carries no percentage - and the latest output line.
     func run(chdmanPath: String, arguments: [String], onProgress: @escaping (Double, String) -> Void) async throws {
         if isCancelled { throw Self.cancellationError() }
 
@@ -208,18 +254,7 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
         }
     }
 
-    /// Runs a batch conversion operation
-    ///
-    /// - Parameters:
-    ///   - chdmanPath: Absolute path to the chdman executable
-    ///   - items: Array of batch items to process
-    ///   - conversionType: The type of conversion to perform
-    ///   - options: Additional SwiftCHD options to apply
-    ///   - config: Batch configuration settings
-    ///   - onItemUpdate: Called when an item's status changes
-    ///   - onItemProgress: Called with progress updates for individual items
-    /// - Returns: A BatchSummary with the results
-    /// - Throws: Error if batch processing fails
+    /// Converts `items` in order, reporting each one's status and progress as it goes.
     func runBatch(
         chdmanPath: String,
         items: [BatchConversionItem],
@@ -261,17 +296,23 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
             item.progress = 0
             onItemUpdate(item)
 
-            // Build arguments for this item
-            let command = CommandBuilder.command(for: conversionType,
-                                                 input: item.inputURL,
-                                                 output: item.outputURL,
-                                                 options: options)
-            defer { CommandBuilder.cleanUp(command) }
-
             // Run the conversion
             do {
+                // Staging happens per item rather than up front: a queue of CDIs would otherwise
+                // need every disc on disk at once, instead of one at a time.
+                let itemID = item.id
+                let prepared = try await prepareInput(item.inputURL, conversionType: conversionType) { pct, status in
+                    onItemProgress(itemID, pct, status)
+                }
+
+                let command = CommandBuilder.command(for: conversionType,
+                                                     input: prepared,
+                                                     output: item.outputURL,
+                                                     options: options)
+                defer { CommandBuilder.cleanUp(command) }
+
                 try await run(chdmanPath: chdmanPath, arguments: command.arguments) { pct, status in
-                    onItemProgress(item.id, pct, status)
+                    onItemProgress(itemID, pct >= 0 ? command.overallProgress(pct) : pct, status)
                 }
 
                 // Success
@@ -303,16 +344,8 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
 
     // MARK: - Output parsing
 
-    /// Recognises output showing chdman has entered a state it will never leave.
-    ///
-    /// When `createcd` cannot parse the input into tracks - which is what it does for every
-    /// extension it does not handle, `.cdi` included - it reports `Input tracks: 0`, then
-    /// computes progress against a zero-byte logical size and spins forever on `nan%`.
-    ///
-    /// Both markers mean the same thing, and deliberately produce the same message: chdman
-    /// prints the header on stdout but progress on stderr, so which one we notice first is a
-    /// race between two pipes. The message must not depend on who wins.
-    ///
+    /// Recognises a state chdman never leaves: unparseable input gives `Input tracks: 0`, then
+    /// `nan%` forever. Both share one message - they arrive on different pipes, either first.
     /// - Returns: A user-facing explanation, or nil if the line looks healthy.
     static func stallReason(for line: String) -> String? {
         guard line.contains("Input tracks: 0") || line.contains("nan%") else { return nil }
@@ -324,24 +357,21 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
             forever and leave behind an empty CHD.
 
             Check that the input is a valid CD image in a format chdman supports (.cue, .gdi, \
-            .iso, .toc, .nrg, .cdr). DiscJuggler (.cdi) images are not supported.
+            .iso, .toc, .nrg, .cdr), or a DiscJuggler (.cdi) image, which Swift-CHD converts \
+            for it.
             """
     }
 
-    /// Attempts to parse a percentage from typical chdman output lines like " 23.4% complete".
-    ///
-    /// - Parameter line: A single line of output from chdman.
-    /// - Returns: A value between 0.0 and 1.0 representing progress, or nil if not found.
+    /// Parses progress from lines like "23.4% complete". Only a percentage followed by "complete"
+    /// counts: the closing `... final ratio = 61.3%` would otherwise read as a jump backwards.
+    /// - Returns: Progress 0.0...1.0, or nil if the line carries none.
     static func parsePercent(line: String) -> Double? {
-        // Find a number (with optional decimal part) followed by %
-        let pattern = #"(\d{1,3}(?:\.\d+)?)%"#
-        if let range = line.range(of: pattern, options: .regularExpression) {
-            let numberPart = line[range].replacingOccurrences(of: "%", with: "")
-            if let value = Double(numberPart) {
-                return min(max(value / 100.0, 0.0), 1.0)
-            }
-        }
-        return nil
+        let pattern = #"(\d{1,3}(?:\.\d+)?)%\s*complete"#
+        guard let range = line.range(of: pattern, options: .regularExpression) else { return nil }
+
+        let digits = line[range].prefix { $0.isNumber || $0 == "." }
+        guard let value = Double(digits) else { return nil }
+        return min(max(value / 100.0, 0.0), 1.0)
     }
 
     private static func cancellationError() -> NSError {

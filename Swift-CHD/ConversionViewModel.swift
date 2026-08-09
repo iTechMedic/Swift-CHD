@@ -1,3 +1,9 @@
+//  ConversionViewModel.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import Foundation
 import Combine
 
@@ -57,14 +63,8 @@ final class ConversionViewModel: ObservableObject {
     /// Invalidates in-flight file checks so a slow one cannot overwrite a newer selection.
     private var fileWarningToken = 0
 
-    /// Explains why the current conversion cannot run, when chdman is unable to handle the
-    /// selected format or file. Non-nil disables the Run button.
-    ///
-    /// Derived rather than stored, so selecting a conversion type publishes nothing extra.
-    /// The type-level check gates both modes: a conversion chdman cannot perform is pointless
-    /// whatever files are queued. The per-file check only gates Single mode - in Batch mode an
-    /// unreadable file is failed individually by `runBatch` so it cannot block the rest of the
-    /// queue.
+    /// Why the current conversion cannot run; non-nil disables the Run button. Only gates Single
+    /// mode - Batch fails unreadable files individually so one cannot block the queue.
     var formatWarning: String? {
         if case let .unsupported(reason, guidance) = conversionType.chdmanSupport {
             return "\(reason)\n\n\(guidance)"
@@ -89,9 +89,8 @@ final class ConversionViewModel: ObservableObject {
         }
     }
 
-    // Each assignment below is guarded, because @Published republishes even when the value is
-    // unchanged - and a burst of redundant publishes is what turns one stray update into a
-    // screenful of "Publishing changes from within view updates" faults.
+    // Each assignment is guarded because @Published republishes even when unchanged, and a burst
+    // of those turns one stray update into a screenful of "Publishing changes" faults.
     func resetForNewConversionType() {
         // Reset options to defaults for the new conversion type
         resetOptionsForType()
@@ -250,7 +249,9 @@ final class ConversionViewModel: ObservableObject {
         return inputURL.deletingLastPathComponent().appendingPathComponent("\(baseName).\(ext)")
     }
 
-    func buildCommand() throws -> ConversionCommand {
+    /// Validates the selection and builds the chdman invocation. Async because a DiscJuggler
+    /// input is staged first, off the main actor, reporting through `onProgress`.
+    func buildCommand(onProgress: @escaping @Sendable (Double, String) -> Void = { _, _ in }) async throws -> ConversionCommand {
         guard let inputURL, let outputURL else {
             throw NSError(domain: "Swift-CHD", code: 1, userInfo: [NSLocalizedDescriptionKey: "Please select input and output paths."])
         }
@@ -263,14 +264,14 @@ final class ConversionViewModel: ObservableObject {
                           userInfo: [NSLocalizedDescriptionKey: reason])
         }
 
+        let prepared = try await task.prepareInput(inputURL,
+                                                   conversionType: conversionType,
+                                                   onProgress: onProgress)
+
         return CommandBuilder.command(for: conversionType,
-                                      input: inputURL,
+                                      input: prepared,
                                       output: outputURL,
                                       options: options)
-    }
-
-    func buildArguments() throws -> [String] {
-        try buildCommand().arguments
     }
 
     func start() async {
@@ -470,22 +471,32 @@ final class ConversionViewModel: ObservableObject {
                 outputDirStarted = outputDir.startAccessingSecurityScopedResource()
             }
 
-            let command = try buildCommand()
-            defer { CommandBuilder.cleanUp(command) }
-            let args = command.arguments
+            // Set running *before* building the command: a DiscJuggler input is rewritten as
+            // part of that, which is slow enough to need a progress bar and a working Cancel.
             isRunning = true
             progress = 0
             statusLine = "Starting..."
             errorMessage = nil
+            consoleOutput = ""
 
-            // Clear and initialize console output
+            let command = try await buildCommand { [weak self] pct, line in
+                guard let self else { return }
+                Task { @MainActor in
+                    if pct >= 0 { self.progress = pct }
+                    self.statusLine = line
+                    if !line.isEmpty { self.consoleOutput += line + "\n" }
+                }
+            }
+            defer { CommandBuilder.cleanUp(command) }
+            let args = command.arguments
+
             let cmdLine = "\(chdmanPath) \(args.joined(separator: " "))"
-            consoleOutput = "$ \(cmdLine)\n"
+            consoleOutput += "$ \(cmdLine)\n"
             consoleOutput += String(repeating: "=", count: 60) + "\n"
 
             try await task.run(chdmanPath: chdmanPath, arguments: args) { [weak self] pct, line in
                 Task { @MainActor in
-                    if pct >= 0 { self?.progress = pct }
+                    if pct >= 0 { self?.progress = command.overallProgress(pct) }
                     self?.statusLine = line
 
                     // Append to console output

@@ -1,12 +1,15 @@
+//  FormatWarningView.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import SwiftUI
 
-/// Explains why the selected conversion cannot run, shown in place of letting the user start a
-/// job chdman would only stall or fail on.
+/// Explains why the selected conversion cannot run. The message is always about the chosen file
+/// and carries its own explanation, so nothing further is linked.
 struct FormatWarningView: View {
     let message: String
-
-    /// Upstream record that CDI support was declined, so the claim in the message is checkable.
-    private static let mameIssueURL = URL(string: "https://github.com/mamedev/mame/issues/11457")!
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -19,16 +22,9 @@ struct FormatWarningView: View {
                     .font(.callout)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                    // fixedSize takes the text's height at whatever width it is offered, and
-                    // SwiftUI proposes width 0 when measuring a view's *minimum* size. Without
-                    // a minWidth the text then wraps to one character per line, reporting a
-                    // minimum height of several thousand points - which the window adopts.
-                    // minWidth is what keeps that measurement sane; maxWidth just keeps the
-                    // line length readable.
+                    // SwiftUI proposes width 0 when measuring minimum size, so without minWidth
+                    // the text wraps one character per line and the window adopts that height.
                     .frame(minWidth: 380, idealWidth: 520, maxWidth: 560, alignment: .leading)
-
-                Link("Why chdman can't do this", destination: Self.mameIssueURL)
-                    .font(.caption)
             }
 
             Spacer(minLength: 0)

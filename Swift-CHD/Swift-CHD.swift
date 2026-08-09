@@ -1,3 +1,9 @@
+//  Swift-CHD.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 //
 //  Swift_CHDApp.swift
 //  Swift-CHD
@@ -13,10 +19,8 @@ struct Swift_CHDApp: App {
         WindowGroup {
             ContentView()
         }
-        // Resizability defaults to .automatic, which sizes the window to whatever its content
-        // reports as an *ideal* size and refuses to go smaller. A single long message was
-        // enough to stretch the window to several thousand points tall. .contentMinSize keeps
-        // the default size below and only enforces the content's minimum.
+        // .automatic resizability sizes the window to the content's *ideal* height and refuses
+        // to shrink - one long message stretched it to thousands of points. .contentMinSize does not.
         .defaultSize(width: 1000, height: 760)
         .windowResizability(.contentMinSize)
     }

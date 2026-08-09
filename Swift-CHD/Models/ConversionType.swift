@@ -1,3 +1,9 @@
+//  ConversionType.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import Foundation
 
 /// Whether `chdman` can actually perform a conversion, and what to tell the user if it can't.
@@ -75,11 +81,8 @@ nonisolated enum ConversionType: String, CaseIterable, Identifiable {
         }
     }
 
-    /// True when the file the user asked for is chdman's *data* output (`-ob`) rather than the
-    /// TOC/cue sheet it writes to `-o`.
-    ///
-    /// An ISO is raw track data, so CHD -> ISO wants the data file. CUE and GDI conversions
-    /// genuinely want the sheet, with the tracks alongside it. See `CommandBuilder`.
+    /// True when the user's file is chdman's *data* output (`-ob`) rather than the sheet it
+    /// writes to `-o`. An ISO is raw track data; CUE and GDI genuinely want the sheet.
     var writesDataToOutputBin: Bool { self == .chdToIso }
 
     // Start with minimal defaults - users enable what they need
@@ -87,38 +90,17 @@ nonisolated enum ConversionType: String, CaseIterable, Identifiable {
         return []  // No options by default, cleaner starting point
     }
 
-    /// Input extensions `chdman`'s `createcd` actually dispatches on. Anything else falls
-    /// through to a zero-track TOC, at which point chdman divides by zero and spins forever
-    /// printing "Compressing, nan% complete...", leaving a 124-byte stub CHD behind.
+    /// Input extensions `chdman`'s `createcd` dispatches on. Anything else falls through to a
+    /// zero-track TOC, where chdman divides by zero and spins forever on "nan% complete".
     static let chdmanSupportedInputExtensions: Set<String> = ["cue", "gdi", "nrg", "iso", "cdr", "toc"]
 
-    /// Little-endian trailer values identifying a DiscJuggler image, read as a UInt32 at
-    /// `EOF - 8`. Matches CDIrip's `CDI_init`, which is the de facto reference for the format.
-    static let cdiTrailerVersions: Set<UInt32> = [0x8000_0004, 0x8000_0005, 0x8000_0006]
+    /// Whether this conversion can run at all. Everything offered works today; the mechanism
+    /// stays because it is where a future format chdman cannot handle would be declared.
+    var chdmanSupport: CHDManSupport { .supported }
 
-    /// Whether chdman can perform this conversion at all.
-    ///
-    /// chdman has never had a DiscJuggler (CDI) parser - the only "CDI" string in the binary is
-    /// the `CDI/2352` *track mode* used inside CUE/TOC sheets, which is unrelated to the
-    /// container format. MAME closed the request to add one as "not planned" (mamedev/mame#11457).
-    var chdmanSupport: CHDManSupport {
-        switch self {
-        case .cdiToChd:
-            return .unsupported(
-                reason: "chdman cannot read DiscJuggler (.cdi) images.",
-                guidance: """
-                This is a limitation of chdman itself, not Swift-CHD - MAME declined to add \
-                CDI support upstream, so no version of chdman can convert these files.
-
-                To convert this disc:
-                  1. Extract the CDI to GDI or BIN+CUE using CDIrip
-                  2. Open the resulting .gdi or .cue file here
-                """
-            )
-        case .isoToChd, .cueToChd, .gdiToChd, .chdToIso, .chdToCue, .chdToGdi:
-            return .supported
-        }
-    }
+    /// True when Swift-CHD rewrites the input before chdman sees it. chdman has no DiscJuggler
+    /// parser and MAME declined to add one (mamedev/mame#11457), so see `CDIImage`/`CDIStager`.
+    var readsInputItself: Bool { self == .cdiToChd }
 
     // Compression codec descriptions
     static let codecDescriptions: [String: String] = [
@@ -133,12 +115,8 @@ nonisolated enum ConversionType: String, CaseIterable, Identifiable {
     /// with "Invalid compressor 'cd' specified" and exits 1.
     static let codecChoices = ["cdlz,cdzl,cdfl", "cdlz", "cdzl", "cdfl", "none"]
 
-    // All available options for advanced users.
-    //
-    // Every entry below is verified against chdman's own usage output. chdman rejects unknown
-    // options outright ("Option '-x' not valid for this command") and exits 1, so an option
-    // listed here that chdman does not accept turns into a hard conversion failure the moment
-    // a user toggles it on. Valid sets are:
+    // Verified against chdman's usage output - it rejects unknown options and exits 1, so a
+    // wrong entry here becomes a hard failure the moment a user toggles it on. Valid sets:
     //   createcd:  -o -op -f -i -hs -c -np
     //   extractcd: -o -ob -sb -f -i -ip
     var advancedOptions: [SwiftCHDOption] {

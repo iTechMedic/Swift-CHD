@@ -13,7 +13,7 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
 | ISO → CHD | ✅ Yes | Single-track disc images |
 | BIN/CUE → CHD | ✅ Yes | Select the `.cue` file |
 | GDI → CHD | ✅ Yes | Dreamcast |
-| CDI → CHD | ⚠️ No | `chdman` cannot read CDI. See [CDI Files](#cdi-files-important) below |
+| CDI → CHD | ✅ Yes | Dreamcast. Read by Swift-CHD itself — see [CDI Files](#cdi-files) |
 | CHD → ISO | ✅ Yes | |
 | CHD → BIN/CUE | ✅ Yes | |
 | CHD → GDI | ✅ Yes | |
@@ -22,22 +22,28 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
 
 - ✅ **Single File Mode**: Convert individual disc images with full control
 - ✅ **Batch Mode**: Process multiple files at once with progress tracking
+- ✅ **Multiple Format Support**:
+  - ISO → CHD
+  - BIN/CUE → CHD
+  - GDI → CHD (Dreamcast)
+  - CDI → CHD (Dreamcast, DiscJuggler)
+  - CHD → ISO
+  - CHD → BIN/CUE
+  - CHD → GDI
 - ✅ **Advanced Options**: Customize compression codecs, hunk sizes, and more
 - ✅ **Real-time Progress**: Live progress tracking and console output
 - ✅ **Automatic chdman Detection**: Finds and verifies your chdman installation
 
-## CDI Files (Important)
+## CDI Files
 
-CDI is a proprietary DiscJuggler container, not a documented disc image format, and `chdman` has no parser for it. Because Swift-CHD is a frontend for `chdman`, **CDI files cannot be converted directly to CHD**, no matter which options you choose.
+CDI is a proprietary DiscJuggler container, and `chdman` has no parser for it — MAME
+[declined to add one upstream](https://github.com/mamedev/mame/issues/11457).
 
-The CDI option is still present in the app as a placeholder, and selecting it displays a warning explaining this. It is being kept in place in case a clean conversion path can be built into a future version.
+As of v1.5, Swift-CHD reads the format itself. It parses the CDI's track table, writes the tracks
+out alongside a generated GDI that `chdman` does understand, and cleans up afterwards. Select a
+`.cdi` file and convert it like any other format — no third-party tools, no intermediate files.
 
-If you want to get a CDI into CHD today, the path is:
-
-1. Convert the CDI to BIN/CUE using a third-party tool (for example, `cdirip`)
-2. Convert the resulting `.cue` to CHD with Swift-CHD
-
-For a small number of discs this is often not worth the effort, and leaving them as CDI is a perfectly reasonable choice.
+See [Converting CDI to CHD](#converting-cdi-to-chd) below for details.
 
 ## Requirements
 
@@ -115,8 +121,8 @@ Perfect for converting individual disc images with full control over options.
    - Expand the "Options" section to customize compression and other settings
    - Common options include:
      * `-f`: Force overwrite existing files
-     * `-c`: Compression codec (cd, cdlz, cdzl, cdfl)
-     * `-np`: Proceed even if not perfect
+     * `-c`: Compression codec (cdlz, cdzl, cdfl)
+     * `-np`: Limit how many CPU cores are used (takes a number)
 5. **Run Conversion**: Click the "Run" button (or press Return)
 6. **Monitor Progress**: Watch the progress bar and console output as conversion proceeds
 
@@ -151,7 +157,7 @@ Ideal for converting multiple files at once.
 
 - ISO files are single-track disc images
 - Choose compression codec based on your needs:
-  * `cd`: Standard CD compression (recommended)
+  * `cdlz,cdzl,cdfl`: chdman's default, picks the best of the three per hunk (recommended)
   * `cdlz`: LZMA compression (better compression, slower)
   * `cdzl`: Zlib compression (faster, larger files)
   * `cdfl`: FLAC compression (audio-focused)
@@ -169,8 +175,19 @@ Ideal for converting multiple files at once.
 - Make sure all associated track files are in the same directory
 
 #### Converting CDI to CHD
-
-- Not supported. See [CDI Files](#cdi-files-important) above for why, and for the BIN/CUE workaround.
+- CDI (DiscJuggler) is a Dreamcast disc image format chdman cannot read, so Swift-CHD reads it
+  itself: it parses the image's track table, writes the tracks out as raw sectors alongside a
+  generated GDI, and points chdman at that. The staged files are deleted when the run finishes.
+- Select the `.cdi` file as input. Everything else works as it does for any other conversion.
+- Conversion needs temporary disk space roughly equal to the size of the image, checked before
+  anything is written. The first part of the progress bar covers this staging step.
+- CDI images that have been renamed to `.iso` are recognised by content and converted correctly.
+  chdman would otherwise accept them as a single 2048-byte-sector track and silently compress
+  them into an unusable CHD.
+- Disc geometry is preserved: a Dreamcast disc's second session starts thousands of sectors
+  after the first ends, and the filesystem inside it stores absolute disc addresses, so the gap
+  has to be reproduced exactly. GDI is used as the intermediate because it is the only sidecar
+  chdman accepts that can state a track's absolute position.
 
 #### Extracting CHD Files
 
@@ -275,7 +292,18 @@ For issues, feature requests, or questions:
 
 ## License
 
-This application is a frontend for chdman. Please respect the MAME project's licensing terms when using chdman.
+Swift-CHD is free software, licensed under the **GNU General Public License, version 2 or later** —
+see [LICENSE](LICENSE) for the full text.
+
+You may use, modify, and redistribute it, including commercially. If you distribute a modified
+version, it must also be released under the GPL with its source available. Note that GPL licensing
+is incompatible with Mac App Store distribution; direct downloads and Homebrew are unaffected.
+
+All code here is original. The DiscJuggler reader in `CDIImage.swift` was written from an empirical
+analysis of real disc images rather than from any existing implementation — see that file's header.
+
+chdman itself is part of MAME and is not bundled — Swift-CHD launches whichever copy you have
+installed, as a separate process. Please respect the MAME project's licensing terms when using it.
 
 ---
 

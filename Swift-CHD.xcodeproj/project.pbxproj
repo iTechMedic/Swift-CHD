@@ -10,9 +10,20 @@
 		B9B963E72EE738E60026086F /* README.md in Resources */ = {isa = PBXBuildFile; fileRef = B9B963E62EE738E60026086F /* README.md */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		C0A10000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = B91111182EDF6D6C00631CB4 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B911111F2EDF6D6C00631CB4;
+			remoteInfo = "Swift-CHD";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		B91111202EDF6D6C00631CB4 /* Swift-CHD.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Swift-CHD.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		B9B963E62EE738E60026086F /* README.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = README.md; sourceTree = "<group>"; };
+		C0A100000000000000000002 /* Swift-CHDTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Swift-CHDTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -21,10 +32,22 @@
 			path = "Swift-CHD";
 			sourceTree = "<group>";
 		};
+		C0A100000000000000000003 /* Swift-CHDTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Swift-CHDTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		B911111D2EDF6D6C00631CB4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C0A100000000000000000005 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -38,6 +61,7 @@
 			isa = PBXGroup;
 			children = (
 				B91111222EDF6D6C00631CB4 /* Swift-CHD */,
+				C0A100000000000000000003 /* Swift-CHDTests */,
 				B91111212EDF6D6C00631CB4 /* Products */,
 				B9B963E62EE738E60026086F /* README.md */,
 			);
@@ -47,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				B91111202EDF6D6C00631CB4 /* Swift-CHD.app */,
+				C0A100000000000000000002 /* Swift-CHDTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -76,6 +101,28 @@
 			productReference = B91111202EDF6D6C00631CB4 /* Swift-CHD.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C0A100000000000000000001 /* Swift-CHDTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C0A100000000000000000006 /* Build configuration list for PBXNativeTarget "Swift-CHDTests" */;
+			buildPhases = (
+				C0A100000000000000000004 /* Sources */,
+				C0A100000000000000000005 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C0A100000000000000000009 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				C0A100000000000000000003 /* Swift-CHDTests */,
+			);
+			name = "Swift-CHDTests";
+			packageProductDependencies = (
+			);
+			productName = "Swift-CHDTests";
+			productReference = C0A100000000000000000002 /* Swift-CHDTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -84,10 +131,14 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2610;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2660;
 				TargetAttributes = {
 					B911111F2EDF6D6C00631CB4 = {
 						CreatedOnToolsVersion = 26.1.1;
+					};
+					C0A100000000000000000001 = {
+						CreatedOnToolsVersion = 26.1.1;
+						TestTargetID = B911111F2EDF6D6C00631CB4;
 					};
 				};
 			};
@@ -106,6 +157,7 @@
 			projectRoot = "";
 			targets = (
 				B911111F2EDF6D6C00631CB4 /* Swift-CHD */,
+				C0A100000000000000000001 /* Swift-CHDTests */,
 			);
 		};
 /* End PBXProject section */
@@ -129,7 +181,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C0A100000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C0A100000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B911111F2EDF6D6C00631CB4 /* Swift-CHD */;
+			targetProxy = C0A10000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		B91111292EDF6D6D00631CB4 /* Debug */ = {
@@ -338,6 +405,46 @@
 			};
 			name = Release;
 		};
+		C0A100000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "iTechMedic.Swift-CHDTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swift-CHD.app/Contents/MacOS/Swift-CHD";
+			};
+			name = Debug;
+		};
+		C0A100000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.1;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "iTechMedic.Swift-CHDTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SUPPORTED_PLATFORMS = macosx;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Swift-CHD.app/Contents/MacOS/Swift-CHD";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -355,6 +462,15 @@
 			buildConfigurations = (
 				B911112C2EDF6D6D00631CB4 /* Debug */,
 				B911112D2EDF6D6D00631CB4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C0A100000000000000000006 /* Build configuration list for PBXNativeTarget "Swift-CHDTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C0A100000000000000000007 /* Debug */,
+				C0A100000000000000000008 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

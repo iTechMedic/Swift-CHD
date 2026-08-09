@@ -1,3 +1,9 @@
+//  OptionsSection.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import SwiftUI
 
 struct OptionsSection: View {
@@ -40,6 +46,10 @@ struct OptionRow: View {
     @Binding var option: SwiftCHDOption
     let conversionType: ConversionType
 
+    /// Edited by the text field instead of `option` itself - see `CHDManPathSection.draft` for
+    /// why a TextField must not write straight into an @Published value.
+    @State private var draft = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .center, spacing: 12) {
@@ -62,13 +72,18 @@ struct OptionRow: View {
                         .frame(width: 140, alignment: .leading)
 
                 case .text:
-                    TextField("value", text: Binding(
-                        get: { option.value ?? "" },
-                        set: { option.value = $0.isEmpty ? nil : $0 }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 140)
-                    .disabled(!option.isEnabled)
+                    TextField("value", text: $draft)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 140)
+                        .disabled(!option.isEnabled)
+                        .onAppear { draft = option.value ?? "" }
+                        .onChange(of: draft) { _, new in
+                            let value = new.isEmpty ? nil : new
+                            if value != option.value { option.value = value }
+                        }
+                        .onChange(of: option.value) { _, new in
+                            if (new ?? "") != draft { draft = new ?? "" }
+                        }
 
                 case .dropdown(let choices):
                     Picker("", selection: $option.value) {

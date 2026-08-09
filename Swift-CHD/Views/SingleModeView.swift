@@ -1,3 +1,9 @@
+//  SingleModeView.swift - Swift-CHD, Copyright (C) 2025-2026 David Hauf
+//
+//  This program is free software: you can redistribute it and/or modify it under the terms of the
+//  GNU General Public License as published by the Free Software Foundation, either version 2 of
+//  the License, or (at your option) any later version. See the LICENSE file for details.
+
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -104,10 +110,8 @@ struct SingleModeView: View {
         panel.allowedContentTypes = [.init(filenameExtension: vm.conversionType.inputExtension)!]
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        // Deliver the result on the next tick. runModal() spins a nested run loop inside the
-        // button's action, so assigning published state as it unwinds happens while SwiftUI
-        // still considers itself mid-update - the "Publishing changes from within view
-        // updates" fault.
+        // Deliver on the next tick: runModal() spins a nested run loop inside the button action,
+        // so publishing as it unwinds still counts as mid-update.
         DispatchQueue.main.async { vm.inputURL = url }
     }
 

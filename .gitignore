@@ -27,6 +27,15 @@ xcuserdata/
 .AppleDouble
 .LSOverride
 
+# --- Test disc images ---
+# Real images used to exercise the converters. Large, and not ours to redistribute.
+*.cdi
+*.chd
+*.gdi
+*.cue
+*.iso
+*.bin
+
 # --- Other ---
 *.moved-aside
 *.xccheckout
