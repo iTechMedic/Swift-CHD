@@ -14,13 +14,19 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
   - ISO → CHD
   - BIN/CUE → CHD
   - GDI → CHD (Dreamcast)
-  - CDI → CHD (Dreamcast)
   - CHD → ISO
   - CHD → BIN/CUE
   - CHD → GDI
 - ✅ **Advanced Options**: Customize compression codecs, hunk sizes, and more
 - ✅ **Real-time Progress**: Live progress tracking and console output
 - ✅ **Automatic chdman Detection**: Finds and verifies your chdman installation
+- ✅ **Cancel Anytime**: Stop a running conversion without force-quitting
+- ✅ **Input Validation**: Rejects images chdman cannot read, instead of stalling on them
+
+> **Note on CDI (DiscJuggler) files:** chdman has no CDI parser, so Swift-CHD cannot convert
+> them. This is a limitation of chdman itself — MAME
+> [declined to add CDI support upstream](https://github.com/mamedev/mame/issues/11457). Extract
+> the CDI to GDI or BIN+CUE with CDIrip first, then convert the resulting `.gdi` / `.cue` here.
 
 ## Requirements
 
@@ -98,8 +104,8 @@ Perfect for converting individual disc images with full control over options.
    - Expand the "Options" section to customize compression and other settings
    - Common options include:
      - `-f`: Force overwrite existing files
-     - `-c`: Compression codec (cd, cdlz, cdzl, cdfl)
-     - `-np`: Proceed even if not perfect
+     - `-c`: Compression codec (`cdlz,cdzl,cdfl`, `cdlz`, `cdzl`, `cdfl`, `none`)
+     - `-np`: Limit how many CPU cores compression uses
 5. **Run Conversion**: Click the "Run" button (or press Return)
 6. **Monitor Progress**: Watch the progress bar and console output as conversion proceeds
 
@@ -133,10 +139,11 @@ Ideal for converting multiple files at once.
 #### Converting ISO to CHD
 - ISO files are single-track disc images
 - Choose compression codec based on your needs:
-  - `cd`: Standard CD compression (recommended)
+  - `cdlz,cdzl,cdfl`: chdman's default — tries all three and keeps the best per hunk (recommended)
   - `cdlz`: LZMA compression (better compression, slower)
   - `cdzl`: Zlib compression (faster, larger files)
   - `cdfl`: FLAC compression (audio-focused)
+  - `none`: No compression (fastest, largest output)
 
 #### Converting BIN/CUE to CHD
 - Always select the `.cue` file, not the `.bin` file
@@ -149,8 +156,13 @@ Ideal for converting multiple files at once.
 - Make sure all associated track files are in the same directory
 
 #### Converting CDI to CHD
-- CDI is another Dreamcast disc image format (DiscJuggler)
-- Select the `.cdi` file as input
+- **Not supported** — chdman cannot read DiscJuggler (`.cdi`) images, and no version of it can.
+  MAME closed the request to add support as "not planned"
+  ([mamedev/mame#11457](https://github.com/mamedev/mame/issues/11457)).
+- Selecting a CDI file shows an explanation rather than starting a conversion that would never
+  finish. Swift-CHD also detects CDI images that have been renamed to `.iso`, which chdman would
+  otherwise accept and silently compress into an unusable CHD.
+- To convert a CDI: extract it to GDI or BIN+CUE with CDIrip, then open the `.gdi` or `.cue` here.
 
 #### Extracting CHD Files
 - When extracting CHD → BIN/CUE or CHD → GDI, multiple files may be created
@@ -163,8 +175,8 @@ Enable "Advanced Mode" in the Options section to access more chdman parameters:
 
 - **Hunk Size (`-hs`)**: Adjust the compression chunk size (advanced users only)
 - **Output BIN Filename (`-ob`)**: Specify custom output filename for BIN files when extracting
-- **Verify (`-v`)**: Verify the file after compression/extraction
-- **Proceed if not perfect (`-np`)**: Continue even if chdman detects a non-perfect source
+- **One BIN Per Track (`-sb`)**: Write a separate BIN file for each track when extracting
+- **Limit CPU Cores (`-np`)**: Cap how many processors compression uses
 
 ### Troubleshooting
 

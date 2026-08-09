@@ -1,7 +1,7 @@
 import Foundation
 
 /// Represents a single file in a batch conversion operation
-struct BatchConversionItem: Identifiable, Hashable {
+nonisolated struct BatchConversionItem: Identifiable, Hashable {
     let id = UUID()
     let inputURL: URL
     var outputURL: URL
@@ -20,7 +20,7 @@ struct BatchConversionItem: Identifiable, Hashable {
 }
 
 /// Status of an individual batch item
-enum BatchItemStatus: String {
+nonisolated enum BatchItemStatus: String {
     case pending = "Pending"
     case processing = "Processing"
     case completed = "Completed"
@@ -49,7 +49,7 @@ enum BatchItemStatus: String {
 }
 
 /// Configuration for batch operations
-struct BatchConversionConfig {
+nonisolated struct BatchConversionConfig {
     var skipExisting: Bool = true
     var stopOnError: Bool = false
     var maxConcurrent: Int = 1 // Number of simultaneous conversions
@@ -58,7 +58,7 @@ struct BatchConversionConfig {
 }
 
 /// Summary of a completed batch conversion
-struct BatchSummary: CustomStringConvertible {
+nonisolated struct BatchSummary: CustomStringConvertible {
     var total: Int
     var succeeded: Int
     var failed: Int

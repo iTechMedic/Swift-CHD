@@ -9,6 +9,7 @@ final class ConversionViewModel: ObservableObject {
     // MARK: - Single File Mode
     @Published var conversionType: ConversionType = .isoToChd {
         didSet {
+            guard oldValue != conversionType else { return }
             resetForNewConversionType()
         }
     }
@@ -18,6 +19,7 @@ final class ConversionViewModel: ObservableObject {
             if let inputURL {
                 outputURL = defaultOutputURL(for: inputURL)
             }
+            refreshFileWarning()
         }
     }
     @Published var outputURL: URL?
@@ -33,6 +35,7 @@ final class ConversionViewModel: ObservableObject {
     @Published var options: [SwiftCHDOption] = []
     @Published var advancedMode: Bool = false {
         didSet {
+            guard oldValue != advancedMode else { return }
             resetOptionsForType()
         }
     }
@@ -47,7 +50,35 @@ final class ConversionViewModel: ObservableObject {
     @Published var chdmanVerified: Bool = false
     @Published var chdmanNotFoundHelp: String? = nil
 
+    /// Result of the asynchronous per-file readability check. Written only when a detached
+    /// check completes, never synchronously from a view-driven `didSet`.
+    @Published private var fileWarning: String? = nil
+
+    /// Invalidates in-flight file checks so a slow one cannot overwrite a newer selection.
+    private var fileWarningToken = 0
+
+    /// Explains why the current conversion cannot run, when chdman is unable to handle the
+    /// selected format or file. Non-nil disables the Run button.
+    ///
+    /// Derived rather than stored, so selecting a conversion type publishes nothing extra.
+    /// The type-level check gates both modes: a conversion chdman cannot perform is pointless
+    /// whatever files are queued. The per-file check only gates Single mode - in Batch mode an
+    /// unreadable file is failed individually by `runBatch` so it cannot block the rest of the
+    /// queue.
+    var formatWarning: String? {
+        if case let .unsupported(reason, guidance) = conversionType.chdmanSupport {
+            return "\(reason)\n\n\(guidance)"
+        }
+        return isBatchMode ? nil : fileWarning
+    }
+
+    /// True once a run has been asked to stop, until it actually does.
+    @Published var isCancelling: Bool = false
+
     private let task = SwiftCHDTask()
+
+    /// Whether a conversion can be started at all, ignoring path/verification state.
+    var canRun: Bool { formatWarning == nil }
 
     init() {
         resetOptionsForType()
@@ -58,28 +89,54 @@ final class ConversionViewModel: ObservableObject {
         }
     }
 
+    // Each assignment below is guarded, because @Published republishes even when the value is
+    // unchanged - and a burst of redundant publishes is what turns one stray update into a
+    // screenful of "Publishing changes from within view updates" faults.
     func resetForNewConversionType() {
         // Reset options to defaults for the new conversion type
         resetOptionsForType()
 
         // Clear all file selections
-        inputURL = nil
-        outputURL = nil
+        if inputURL != nil { inputURL = nil }
+        if outputURL != nil { outputURL = nil }
 
         // Clear batch items and settings
-        batchItems.removeAll()
-        batchOutputDirectory = nil
-        batchSummary = nil
+        if !batchItems.isEmpty { batchItems.removeAll() }
+        if batchOutputDirectory != nil { batchOutputDirectory = nil }
+        if batchSummary != nil { batchSummary = nil }
 
         // Clear console output and status
-        consoleOutput = ""
-        errorMessage = nil
-        statusLine = ""
-        progress = 0
+        if !consoleOutput.isEmpty { consoleOutput = "" }
+        if errorMessage != nil { errorMessage = nil }
+        if !statusLine.isEmpty { statusLine = "" }
+        if progress != 0 { progress = 0 }
+
+        refreshFileWarning()
+    }
+
+    /// Re-runs the per-file readability check for the current selection.
+    private func refreshFileWarning() {
+        fileWarningToken &+= 1
+        let token = fileWarningToken
+        if fileWarning != nil { fileWarning = nil }
+
+        guard let url = inputURL else { return }
+
+        // Inspecting the file touches disk, so keep it off the main actor - a stalled network
+        // volume should never freeze the UI just because a file was selected.
+        let type = conversionType
+        Task { [weak self] in
+            let reason = await Task.detached {
+                InputValidator.rejectionReason(for: url, conversionType: type)
+            }.value
+            guard let self, let reason, token == self.fileWarningToken else { return }
+            self.fileWarning = reason
+        }
     }
 
     func resetOptionsForType() {
-        options = advancedMode ? conversionType.advancedOptions : conversionType.defaultOptions
+        let updated = advancedMode ? conversionType.advancedOptions : conversionType.defaultOptions
+        if updated != options { options = updated }
     }
 
     func addSelectedOption() {
@@ -193,36 +250,52 @@ final class ConversionViewModel: ObservableObject {
         return inputURL.deletingLastPathComponent().appendingPathComponent("\(baseName).\(ext)")
     }
 
-    func buildArguments() throws -> [String] {
+    func buildCommand() throws -> ConversionCommand {
         guard let inputURL, let outputURL else {
             throw NSError(domain: "Swift-CHD", code: 1, userInfo: [NSLocalizedDescriptionKey: "Please select input and output paths."])
         }
 
-        var args: [String] = []
-
-        // Use the chdmanCommand from ConversionType
-        args.append(conversionType.chdmanCommand)
-
-        // Base -i/-o - use path(percentEncoded: false) to get proper paths
-        args += ["-i", inputURL.path(percentEncoded: false)]
-        args += ["-o", outputURL.path(percentEncoded: false)]
-
-        // Additional options from UI (skip -i/-o to avoid duplicates)
-        for opt in options where opt.isEnabled {
-            let lower = opt.key.lowercased()
-            if lower == "-i" || lower == "-o" { continue }
-            args += opt.asArguments
+        // Reject input chdman cannot read before launching it. Without this, an unreadable
+        // image leaves chdman looping on "nan% complete" with no way out but force-quitting.
+        if let reason = InputValidator.rejectionReason(for: inputURL, conversionType: conversionType) {
+            throw NSError(domain: SwiftCHDTask.errorDomain,
+                          code: SwiftCHDTask.ErrorCode.unsupportedInput.rawValue,
+                          userInfo: [NSLocalizedDescriptionKey: reason])
         }
 
-        return args
+        return CommandBuilder.command(for: conversionType,
+                                      input: inputURL,
+                                      output: outputURL,
+                                      options: options)
+    }
+
+    func buildArguments() throws -> [String] {
+        try buildCommand().arguments
     }
 
     func start() async {
+        task.resetCancellation()
+        isCancelling = false
+
         if isBatchMode {
             await startBatch()
         } else {
             await startSingle()
         }
+    }
+
+    /// Stops the running conversion, killing the chdman process.
+    func cancel() {
+        guard isRunning, !isCancelling else { return }
+        isCancelling = true
+        statusLine = "Cancelling..."
+        task.cancel()
+    }
+
+    /// True when an error represents a user-requested cancellation rather than a failure.
+    private func isCancellation(_ error: NSError) -> Bool {
+        error.domain == SwiftCHDTask.errorDomain
+            && error.code == SwiftCHDTask.ErrorCode.cancelled.rawValue
     }
 
     // MARK: - Batch Mode Operations
@@ -343,18 +416,28 @@ final class ConversionViewModel: ObservableObject {
             }
 
             batchSummary = summary
+            let wasCancelled = isCancelling
             consoleOutput += String(repeating: "=", count: 60) + "\n"
-            consoleOutput += "=== BATCH CONVERSION COMPLETED ===\n"
+            consoleOutput += wasCancelled ? "=== BATCH CONVERSION CANCELLED ===\n" : "=== BATCH CONVERSION COMPLETED ===\n"
             consoleOutput += summary.description + "\n"
-            statusLine = "Batch completed: \(summary.succeeded)/\(summary.total) succeeded"
+            statusLine = wasCancelled
+                ? "Batch cancelled after \(summary.succeeded)/\(summary.total)"
+                : "Batch completed: \(summary.succeeded)/\(summary.total) succeeded"
 
-        } catch {
-            errorMessage = "Batch conversion error: \(error.localizedDescription)"
-            consoleOutput += String(repeating: "=", count: 60) + "\n"
-            consoleOutput += "BATCH ERROR: \(error.localizedDescription)\n"
+        } catch let error as NSError {
+            if isCancellation(error) {
+                consoleOutput += String(repeating: "=", count: 60) + "\n"
+                consoleOutput += "BATCH CANCELLED\n"
+                statusLine = "Batch cancelled"
+            } else {
+                errorMessage = "Batch conversion error: \(error.localizedDescription)"
+                consoleOutput += String(repeating: "=", count: 60) + "\n"
+                consoleOutput += "BATCH ERROR: \(error.localizedDescription)\n"
+            }
         }
 
         isRunning = false
+        isCancelling = false
     }
 
     private func startSingle() async {
@@ -387,7 +470,9 @@ final class ConversionViewModel: ObservableObject {
                 outputDirStarted = outputDir.startAccessingSecurityScopedResource()
             }
 
-            let args = try buildArguments()
+            let command = try buildCommand()
+            defer { CommandBuilder.cleanUp(command) }
+            let args = command.arguments
             isRunning = true
             progress = 0
             statusLine = "Starting..."
@@ -415,6 +500,11 @@ final class ConversionViewModel: ObservableObject {
             consoleOutput += "SUCCESS: Conversion completed!\n"
             progress = 1.0
             didSucceed = true
+        } catch let error as NSError where isCancellation(error) {
+            consoleOutput += String(repeating: "=", count: 60) + "\n"
+            consoleOutput += "CANCELLED: conversion stopped by user.\n"
+            statusLine = "Cancelled"
+            progress = 0
         } catch let error as NSError {
             // Log error to console
             consoleOutput += String(repeating: "=", count: 60) + "\n"
@@ -435,10 +525,14 @@ final class ConversionViewModel: ObservableObject {
                 default:
                     errorMessage = "File error: \(error.localizedDescription)"
                 }
-            } else if errorDomain == "SwiftCHDTask" {
-                if errorCode == -1 {
+            } else if errorDomain == SwiftCHDTask.errorDomain {
+                switch SwiftCHDTask.ErrorCode(rawValue: errorCode) {
+                case .executableNotFound:
                     errorMessage = error.localizedDescription + "\n\nMake sure the chdman path is correct (should end with /chdman)."
-                } else {
+                case .unsupportedInput, .stalled:
+                    // Already a full explanation aimed at the user.
+                    errorMessage = error.localizedDescription
+                default:
                     // The error already contains the chdman output
                     errorMessage = error.localizedDescription
                 }
@@ -471,5 +565,6 @@ final class ConversionViewModel: ObservableObject {
         }
 
         isRunning = false
+        isCancelling = false
     }
 }

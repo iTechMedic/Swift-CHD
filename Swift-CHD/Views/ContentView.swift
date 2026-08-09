@@ -1,7 +1,11 @@
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject private var vm = ConversionViewModel()
+    // @StateObject, not @ObservedObject: an @ObservedObject with an inline initializer builds a
+    // brand-new view model every time SwiftUI re-initialises the view. That both discards state
+    // mid-run and publishes from inside a view update, which is what produced the
+    // "Publishing changes from within view updates" faults in the log.
+    @StateObject private var vm = ConversionViewModel()
 
     var body: some View {
         NavigationSplitView {

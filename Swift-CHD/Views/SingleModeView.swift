@@ -11,6 +11,10 @@ struct SingleModeView: View {
                     Text(vm.conversionType.description)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+
+                    if let warning = vm.formatWarning {
+                        FormatWarningView(message: warning)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -59,7 +63,16 @@ struct SingleModeView: View {
                     Label("Run", systemImage: "play.fill")
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(vm.isRunning || vm.inputURL == nil || vm.outputURL == nil || !vm.chdmanVerified)
+                .disabled(vm.isRunning || vm.inputURL == nil || vm.outputURL == nil || !vm.chdmanVerified || !vm.canRun)
+
+                if vm.isRunning {
+                    Button(role: .destructive) {
+                        vm.cancel()
+                    } label: {
+                        Label(vm.isCancelling ? "Stopping..." : "Stop", systemImage: "stop.fill")
+                    }
+                    .disabled(vm.isCancelling)
+                }
 
                 if let err = vm.errorMessage {
                     Text(err)
@@ -90,9 +103,12 @@ struct SingleModeView: View {
         // Use the extension from ConversionType
         panel.allowedContentTypes = [.init(filenameExtension: vm.conversionType.inputExtension)!]
 
-        if panel.runModal() == .OK {
-            vm.inputURL = panel.url
-        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Deliver the result on the next tick. runModal() spins a nested run loop inside the
+        // button's action, so assigning published state as it unwinds happens while SwiftUI
+        // still considers itself mid-update - the "Publishing changes from within view
+        // updates" fault.
+        DispatchQueue.main.async { vm.inputURL = url }
     }
 
     private func chooseOutput() {
@@ -103,9 +119,8 @@ struct SingleModeView: View {
         panel.allowedContentTypes = [.init(filenameExtension: ext)!]
         panel.nameFieldStringValue = suggestedOutputName(ext: ext)
 
-        if panel.runModal() == .OK {
-            vm.outputURL = panel.url
-        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        DispatchQueue.main.async { vm.outputURL = url }
     }
 
     private func suggestedOutputName(ext: String) -> String {

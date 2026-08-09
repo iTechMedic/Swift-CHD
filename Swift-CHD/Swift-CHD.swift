@@ -13,5 +13,11 @@ struct Swift_CHDApp: App {
         WindowGroup {
             ContentView()
         }
+        // Resizability defaults to .automatic, which sizes the window to whatever its content
+        // reports as an *ideal* size and refuses to go smaller. A single long message was
+        // enough to stretch the window to several thousand points tall. .contentMinSize keeps
+        // the default size below and only enforces the content's minimum.
+        .defaultSize(width: 1000, height: 760)
+        .windowResizability(.contentMinSize)
     }
 }

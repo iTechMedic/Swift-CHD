@@ -11,6 +11,10 @@ struct BatchModeView: View {
                     Text(vm.conversionType.description)
                         .font(.callout)
                         .foregroundStyle(.secondary)
+
+                    if let warning = vm.formatWarning {
+                        FormatWarningView(message: warning)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -97,7 +101,16 @@ struct BatchModeView: View {
                     Label("Run Batch", systemImage: "play.fill")
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(vm.isRunning || vm.batchItems.isEmpty || !vm.chdmanVerified)
+                .disabled(vm.isRunning || vm.batchItems.isEmpty || !vm.chdmanVerified || !vm.canRun)
+
+                if vm.isRunning {
+                    Button(role: .destructive) {
+                        vm.cancel()
+                    } label: {
+                        Label(vm.isCancelling ? "Stopping..." : "Stop", systemImage: "stop.fill")
+                    }
+                    .disabled(vm.isCancelling)
+                }
 
                 if let err = vm.errorMessage {
                     Text(err)
@@ -174,9 +187,11 @@ struct BatchModeView: View {
         panel.allowedContentTypes = [.init(filenameExtension: vm.conversionType.inputExtension)!]
         panel.message = "Select one or more \(vm.conversionType.inputExtension.uppercased()) files to convert"
 
-        if panel.runModal() == .OK {
-            vm.addBatchFiles(panel.urls)
-        }
+        guard panel.runModal() == .OK else { return }
+        // See SingleModeView.chooseInput: runModal() unwinds inside the button action, so the
+        // published mutation has to wait for the next tick.
+        let urls = panel.urls
+        DispatchQueue.main.async { vm.addBatchFiles(urls) }
     }
 
     private func chooseBatchOutputDirectory() {
@@ -187,8 +202,7 @@ struct BatchModeView: View {
         panel.canCreateDirectories = true
         panel.message = "Choose output directory for converted files"
 
-        if panel.runModal() == .OK {
-            vm.updateBatchOutputDirectory(panel.url)
-        }
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        DispatchQueue.main.async { vm.updateBatchOutputDirectory(url) }
     }
 }

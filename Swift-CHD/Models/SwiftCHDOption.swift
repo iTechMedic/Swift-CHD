@@ -1,13 +1,13 @@
 import Foundation
 
 /// Option type to determine UI representation
-enum SwiftCHDOptionType: Hashable {
+nonisolated enum SwiftCHDOptionType: Hashable {
     case flag      // Simple flag with no value (e.g., -f)
     case text      // Free text input
     case dropdown([String]) // Dropdown with predefined choices
 }
 
-struct SwiftCHDOption: Identifiable, Hashable {
+nonisolated struct SwiftCHDOption: Identifiable, Hashable {
     var key: String
     var value: String?
     var help: String
