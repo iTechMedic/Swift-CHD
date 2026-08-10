@@ -21,6 +21,9 @@ struct SingleModeView: View {
                     if let warning = vm.formatWarning {
                         FormatWarningView(message: warning)
                     }
+                    if let advisory = vm.advisoryNote {
+                        FormatWarningView(message: advisory, isAdvisory: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }

@@ -6,15 +6,21 @@
 
 import SwiftUI
 
-/// Explains why the selected conversion cannot run. The message is always about the chosen file
-/// and carries its own explanation, so nothing further is linked.
+/// Explains why the selected conversion cannot run, or - as an advisory - how it will run when
+/// that is worth knowing. The message is always about the chosen file and carries its own
+/// explanation, so nothing further is linked.
 struct FormatWarningView: View {
     let message: String
+    /// Advisory messages are about a conversion that *will* run, so they are tinted apart from
+    /// the blocking kind rather than making every selected file look broken.
+    var isAdvisory: Bool = false
+
+    private var tint: Color { isAdvisory ? .accentColor : .orange }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+            Image(systemName: isAdvisory ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(tint)
                 .font(.title3)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -30,10 +36,10 @@ struct FormatWarningView: View {
             Spacer(minLength: 0)
         }
         .padding(10)
-        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Color.orange.opacity(0.35), lineWidth: 1)
+                .strokeBorder(tint.opacity(0.35), lineWidth: 1)
         )
     }
 }

@@ -41,6 +41,24 @@ nonisolated struct CDITrack: Equatable {
     var gdiLBA: Int { lba + pregap - 150 }
 
     var isAudio: Bool { mode == 0 }
+
+    /// Absolute addresses this track's user data covers, in GDI terms.
+    var lbaRange: Range<Int> { gdiLBA..<(gdiLBA + length) }
+
+    /// Where a sector's 2048 bytes of user data begin within the bytes the image stores.
+    ///
+    /// DiscJuggler keeps whichever part of the sector the burn needed: everything for a 2352-byte
+    /// track, subheader onwards at 2336, user data alone at 2048. `nil` means the track carries no
+    /// 2048-byte user area to find - an audio track, or a Mode 2 form this reader does not decode.
+    var userDataOffset: Int? {
+        switch (mode, sectorSize) {
+        case (1, 2048), (2, 2048): return 0
+        case (2, 2336): return 8    // Mode 2 subheader
+        case (1, 2352): return 16   // sync + header
+        case (2, 2352): return 24   // sync + header + subheader
+        default: return nil
+        }
+    }
 }
 
 /// A parsed DiscJuggler (`.cdi`) image. chdman has no CDI reader and never will
@@ -59,16 +77,26 @@ nonisolated struct CDIImage {
     /// Byte offsets of each field, measured from the end of the filename embedded in a record.
     /// Anchoring here rather than at the record start keeps the offsets valid whatever the
     /// authoring machine's path length happened to be.
+    ///
+    /// Two record layouts exist. Newer DiscJuggler builds insert eight extra bytes ahead of the
+    /// numeric fields, pushing every offset below up by `longLayoutShift`. Which one a record uses
+    /// is stated by the record itself - see `layoutMarker` - so the offsets never depend on the
+    /// version word in the trailer.
     private enum Field {
-        static let pregap = 33
-        static let length = 37
-        static let mode = 47
-        static let lba = 63
-        static let totalLength = 67
-        static let sectorSizeCode = 87
-        /// Bytes that must be readable past the filename for the fields above to be present.
-        static let required = sectorSizeCode + 4
+        /// Holds `layoutMarkerValue` when the record uses the longer layout.
+        static let layoutMarker = 19
+        static let pregap = 25
+        static let length = 29
+        static let mode = 39
+        static let lba = 55
+        static let totalLength = 59
+        static let sectorSizeCode = 79
+        /// Extra bytes the longer layout inserts between the marker and the numeric fields.
+        static let longLayoutShift = 8
     }
+
+    /// Written at `Field.layoutMarker` by the DiscJuggler builds that use the longer record layout.
+    private static let layoutMarkerValue: UInt32 = 0x8000_0000
 
     /// Bytes between a session's track-count word and the first record marker of that session.
     private static let trackCountLead = 6
@@ -213,16 +241,24 @@ nonisolated struct CDIImage {
         }
 
         let base = filenameLengthAt + 1 + Int(header[filenameLengthAt])
-        guard base + Field.required <= header.count else {
+        guard base + Field.layoutMarker + 4 <= header.count else {
             throw CDIError.corrupt("track \(number) record is truncated")
         }
 
-        let pregap = Int(readI32(header, base + Field.pregap))
-        let length = Int(readI32(header, base + Field.length))
-        let mode = Int(readU32(header, base + Field.mode))
-        let lba = Int(readU32(header, base + Field.lba))
-        let totalLength = Int(readU32(header, base + Field.totalLength))
-        let code = Int(readU32(header, base + Field.sectorSizeCode))
+        // The record states its own layout, so a v2 image and a v3.5 one are read the same way.
+        let shift = readU32(header, base + Field.layoutMarker) == layoutMarkerValue
+            ? Field.longLayoutShift : 0
+        guard base + shift + Field.sectorSizeCode + 4 <= header.count else {
+            throw CDIError.corrupt("track \(number) record is truncated")
+        }
+
+        let field = { base + shift + $0 }
+        let pregap = Int(readI32(header, field(Field.pregap)))
+        let length = Int(readI32(header, field(Field.length)))
+        let mode = Int(readU32(header, field(Field.mode)))
+        let lba = Int(readU32(header, field(Field.lba)))
+        let totalLength = Int(readU32(header, field(Field.totalLength)))
+        let code = Int(readU32(header, field(Field.sectorSizeCode)))
 
         guard let sectorSize = sectorSize(forCode: code) else {
             throw CDIError.unsupportedTrack("track \(number) has sector size code \(code)")
@@ -272,6 +308,9 @@ nonisolated enum CDIError: LocalizedError, Equatable {
     case notDiscJuggler
     case corrupt(String)
     case unsupportedTrack(String)
+    case notBootable(String)
+    case unconvertibleLayout(String)
+    case hasCDAudio(trackCount: Int)
     case insufficientSpace(needed: Int64, available: Int64)
     case cancelled
 
@@ -285,6 +324,39 @@ nonisolated enum CDIError: LocalizedError, Equatable {
             return "This DiscJuggler image could not be read: \(detail)"
         case .unsupportedTrack(let detail):
             return "This DiscJuggler image contains a track Swift-CHD cannot convert: \(detail)"
+        case .notBootable(let detail):
+            return """
+                This DiscJuggler image does not look like a Dreamcast disc: \(detail).
+
+                Swift-CHD can only convert Dreamcast CDI images. A CDI holding some other system's \
+                disc has no equivalent CHD layout to convert it to.
+                """
+        case .unconvertibleLayout(let detail):
+            return """
+                This Dreamcast disc cannot be converted to a CHD: \(detail).
+
+                Emulators only accept a CHD that is laid out as a GD-ROM, with the boot header at \
+                disc address \(CDIStager.highDensityLBA). A self-boot CDI keeps its files at fixed \
+                addresses that cannot be moved, so that address has to be free - and on this disc \
+                it is not.
+
+                The CDI itself still works: redream and Flycast both open .cdi files directly.
+                """
+        case .hasCDAudio(let trackCount):
+            let tracks = trackCount == 1 ? "1 CD audio track" : "\(trackCount) CD audio tracks"
+            return """
+                This Dreamcast disc has \(tracks), which Swift-CHD cannot convert to a CHD.
+
+                A CHD has to be laid out as a GD-ROM, whose boot header sits at disc address \
+                \(CDIStager.highDensityLBA). Music that will not fit below that address has to go \
+                above it, into the area a GD-ROM reserves for game data and a Dreamcast never \
+                plays audio from. Games tested this way boot and then stop at their first screen, \
+                waiting for music that never starts.
+
+                This is not something the conversion can correct - the disc simply has more audio \
+                than a GD-ROM has room for. The CDI itself still works: redream and Flycast both \
+                open .cdi files directly.
+                """
         case .insufficientSpace(let needed, let available):
             let neededText = ByteCountFormatter.string(fromByteCount: needed, countStyle: .file)
             let availableText = ByteCountFormatter.string(fromByteCount: available, countStyle: .file)

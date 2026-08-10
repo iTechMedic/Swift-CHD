@@ -13,7 +13,7 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
 | ISO → CHD | ✅ Yes | Single-track disc images |
 | BIN/CUE → CHD | ✅ Yes | Select the `.cue` file |
 | GDI → CHD | ✅ Yes | Dreamcast |
-| CDI → CHD | ✅ Yes | Dreamcast. Read by Swift-CHD itself — see [CDI Files](#cdi-files) |
+| CDI → CHD | ⚠️ Some discs | Dreamcast. Read by Swift-CHD itself — see [CDI Files](#cdi-files) |
 | CHD → ISO | ✅ Yes | |
 | CHD → BIN/CUE | ✅ Yes | |
 | CHD → GDI | ✅ Yes | |
@@ -37,11 +37,43 @@ Swift-CHD is a native Mac app that provides a graphical frontend for the powerfu
 ## CDI Files
 
 CDI is a proprietary DiscJuggler container, and `chdman` has no parser for it — MAME
-[declined to add one upstream](https://github.com/mamedev/mame/issues/11457).
+[declined to add one upstream](https://github.com/mamedev/mame/issues/11457). Swift-CHD reads the
+format itself: select a `.cdi` file and convert it like any other, with no third-party tools.
 
-As of v1.5, Swift-CHD reads the format itself. It parses the CDI's track table, writes the tracks
-out alongside a generated GDI that `chdman` does understand, and cleans up afterwards. Select a
-`.cdi` file and convert it like any other format — no third-party tools, no intermediate files.
+**Not every Dreamcast CDI can become a working CHD, and the reason is worth understanding before
+you try.** A CDI is always a *CD* — a self-boot CD-R burnt from a GD-ROM so it would play from an
+ordinary drive. A Dreamcast CHD is always a *GD-ROM*: redream and Flycast both assume that geometry
+for CHD input and ignore what the disc's table of contents actually says. redream reads the boot
+header at disc address 45000 whatever the disc is, and Flycast rejects a CHD with fewer than three
+tracks outright.
+
+So the conversion is a rebuild, not a copy. Swift-CHD prefers to move nothing at all: it keeps
+every original track exactly where it was — the filesystem records absolute disc addresses — and
+adds a copy of the boot session at address 45000, where an emulator insists on finding it.
+
+That works only if the disc's own data does not already sit across address 45000. On a small disc
+it does not. On a large one it does, and Swift-CHD falls back to rebuilding the disc around that
+address: the boot session moves onto it, everything else moves after it, and every address in the
+ISO 9660 filesystem is rewritten so each file is still found by name. A disc converted this way is
+flagged in the UI, because it is worth testing before you delete the CDI.
+
+Rebuilding is not always sound. **Games that read the disc by raw sector number** ship a build-time
+table of sector addresses and never ask the filesystem anything, so rewriting the filesystem does
+not help them — they boot and then reboot-loop. Swift-CHD spots this by looking for the disc's own
+directory addresses inside the boot binary (Sonic Adventure, for one, has them) and **refuses with
+the reason** rather than writing a CHD that looks fine and will not boot.
+
+Discs with **CD audio** are refused. A GD-ROM's boot header sits at address 45000, so only that
+many sectors exist beneath it — far fewer than a CD soundtrack needs — and the music necessarily
+lands above, inside the area a GD-ROM reserves for game data and a Dreamcast never plays audio
+from. Neo XYX, measured: its CDI reaches attract-mode gameplay in both emulators, while every CHD
+built from it boots and then stops, black in redream and frozen on the licence screen in Flycast.
+This is a property of the disc rather than of the conversion — a build that relocated *nothing*,
+every original address kept, failed in exactly the same way — so there is no layout to be cleverer
+about.
+
+A refused disc is not a bug, and the CDI itself still works — redream and Flycast both open `.cdi`
+files directly.
 
 See [Converting CDI to CHD](#converting-cdi-to-chd) below for details.
 
@@ -184,10 +216,42 @@ Ideal for converting multiple files at once.
 - CDI images that have been renamed to `.iso` are recognised by content and converted correctly.
   chdman would otherwise accept them as a single 2048-byte-sector track and silently compress
   them into an unusable CHD.
-- Disc geometry is preserved: a Dreamcast disc's second session starts thousands of sectors
-  after the first ends, and the filesystem inside it stores absolute disc addresses, so the gap
-  has to be reproduced exactly. GDI is used as the intermediate because it is the only sidecar
-  chdman accepts that can state a track's absolute position.
+- **A disc that cannot be converted is refused before anything is written**, with the address, the
+  track, or the CD audio that is in the way named in the message. See [CDI Files](#cdi-files) for
+  why. This is checked as soon as you select the file, not after a conversion has run.
+- **A disc that had to be rebuilt around address 45000 is flagged, not refused.** The conversion is
+  sound as far as it can be checked, but a game that keeps sector addresses somewhere other than
+  its boot binary would not be caught. Test the CHD before deleting the CDI.
+
+What the rebuild does, and why each step is needed:
+
+- **Tracks stay where they were, whenever possible.** A Dreamcast filesystem records absolute disc
+  addresses, so a track that moves takes every file on the disc with it. GDI is used as the
+  intermediate because it is the only sidecar chdman accepts that can state a track's absolute
+  position.
+- **The boot session is copied to address 45000.** That is where a GD-ROM keeps its high-density
+  area, and where an emulator reads the boot header and filesystem descriptor from regardless of
+  the table of contents.
+- **Or, if address 45000 is already occupied, the disc is rebuilt around it.** The boot session
+  moves onto the address and everything else moves after it, and every address in the ISO 9660
+  filesystem — the volume descriptors, both path tables, and the extent of every directory record
+  — is rewritten so each file is still found by name.
+- **Data tracks are rewritten as Mode 1.** redream's and Flycast's CHD readers understand only
+  `AUDIO` and `MODE1_RAW`. A self-boot CD-R is usually Mode 2, whose user data sits eight bytes
+  further into each sector — declaring it Mode 1 without moving the data is what made every CHD
+  produced before v1.5.1 unreadable.
+- **The boot binary is shuffled the way a GD-ROM master holds it.** A pressed GD-ROM stores the
+  binary as a permutation of 32-byte slices and the bootstrap unshuffles it on load, while a
+  self-boot CD-R — which a DiscJuggler image is by construction — stores it straight, because the
+  ripper that made the CD-R unshuffled it. What is written here is a GD-ROM, so the shuffle goes
+  back on. This is unconditional: an earlier version guessed from the binary's byte statistics
+  whether it was already shuffled, and on real discs the guess was wrong often enough to be
+  useless — and getting it wrong loads garbage into RAM and reboot-loops the game.
+- **Filler tracks are added if the disc has fewer than three**, since Flycast refuses a CHD with
+  fewer. The filler is empty data sectors in the low-density area, which nothing reads. They have
+  to be *data* tracks — a reader that finds only audio there decides the disc has no regions and
+  rejects it — and the first track has to start at address zero, because addresses are rebased on
+  track 1 when the CHD is written.
 
 #### Extracting CHD Files
 
@@ -214,7 +278,13 @@ If you encounter issues, check the built-in troubleshooting guide:
    - **"chdman not found"**: Verify chdman is installed and the path is correct
    - **"File exists"**: Enable the `-f` (force overwrite) option
    - **Conversion fails immediately**: Check that input file format matches conversion type
-   - **CDI conversion fails**: Expected. CDI is not supported by chdman, see above
+   - **CDI refused with "cannot be converted to a CHD"**: The disc's own data sits across the
+     address an emulator reads a GD-ROM's boot header from, and the disc cannot safely be rebuilt
+     around it — its boot program reads the disc by raw address. See
+     [CDI Files](#cdi-files). Use the `.cdi` directly — redream and Flycast both open them.
+   - **CDI refused for having CD audio tracks**: A GD-ROM has nowhere to keep a CD soundtrack, and
+     such a disc boots and then stops at its first screen. See [CDI Files](#cdi-files). Use the
+     `.cdi` directly.
 
 ### Console Output
 

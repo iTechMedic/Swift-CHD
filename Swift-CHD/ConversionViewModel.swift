@@ -60,8 +60,18 @@ final class ConversionViewModel: ObservableObject {
     /// check completes, never synchronously from a view-driven `didSet`.
     @Published private var fileWarning: String? = nil
 
+    /// How the current file will be converted, when that is worth saying. Advisory only.
+    @Published private var fileAdvisory: String? = nil
+
     /// Invalidates in-flight file checks so a slow one cannot overwrite a newer selection.
     private var fileWarningToken = 0
+
+    /// A note about the conversion that does not stop it running. Suppressed while a rejection is
+    /// showing, so the user is never given advice about a file that is not going to convert.
+    var advisoryNote: String? {
+        guard formatWarning == nil, !isBatchMode else { return nil }
+        return fileAdvisory
+    }
 
     /// Why the current conversion cannot run; non-nil disables the Run button. Only gates Single
     /// mode - Batch fails unreadable files individually so one cannot block the queue.
@@ -118,6 +128,7 @@ final class ConversionViewModel: ObservableObject {
         fileWarningToken &+= 1
         let token = fileWarningToken
         if fileWarning != nil { fileWarning = nil }
+        if fileAdvisory != nil { fileAdvisory = nil }
 
         guard let url = inputURL else { return }
 
@@ -125,11 +136,15 @@ final class ConversionViewModel: ObservableObject {
         // volume should never freeze the UI just because a file was selected.
         let type = conversionType
         Task { [weak self] in
-            let reason = await Task.detached {
-                InputValidator.rejectionReason(for: url, conversionType: type)
+            let result = await Task.detached { () -> (String?, String?) in
+                if let reason = InputValidator.rejectionReason(for: url, conversionType: type) {
+                    return (reason, nil)
+                }
+                return (nil, InputValidator.advisory(for: url, conversionType: type))
             }.value
-            guard let self, let reason, token == self.fileWarningToken else { return }
-            self.fileWarning = reason
+            guard let self, token == self.fileWarningToken else { return }
+            self.fileWarning = result.0
+            self.fileAdvisory = result.1
         }
     }
 

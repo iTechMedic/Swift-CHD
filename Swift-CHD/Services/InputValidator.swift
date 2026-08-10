@@ -24,20 +24,38 @@ nonisolated enum InputValidator {
         let ext = inputURL.pathExtension.lowercased()
 
         // 2. A DiscJuggler image, whatever it is called - Swift-CHD reads these itself, so the
-        //    only question is whether this one parses. Catching it here also stops a CDI misnamed
-        //    .iso being accepted by chdman as one 2048-byte-sector track and compressed to junk.
+        //    questions are whether it parses and whether it has a GD-ROM layout to become.
+        //    Planning here rather than at conversion time costs a handful of sector reads and
+        //    means a disc that cannot be converted says so before anything is written. Catching
+        //    it here also stops a CDI misnamed .iso being accepted by chdman as one
+        //    2048-byte-sector track and compressed to junk.
         do {
-            _ = try CDIImage.read(at: inputURL)
+            let image = try CDIImage.read(at: inputURL)
+            _ = try CDIStager.plan(image, from: inputURL)
             return nil
         } catch CDIError.notDiscJuggler, CDIError.unreadable(_) {
             // No DiscJuggler structure at all, so it is simply some other format - or one we
             // cannot open, which chdman will report better than we can. Fall through.
+        } catch let cdiError as CDIError {
+            switch cdiError {
+            case .notBootable, .unconvertibleLayout, .hasCDAudio:
+                // The image read fine; it is what is on it that has no CHD to become. Those
+                // errors explain themselves, so they are not wrapped in a "could not be read"
+                // that would misdescribe the problem.
+                return cdiError.errorDescription
+            default:
+                // The trailer pointed somewhere plausible but the track table did not hold up.
+                return """
+                    "\(inputURL.lastPathComponent)" could not be read as a DiscJuggler image.
+
+                    \(cdiError.errorDescription ?? "\(cdiError)")
+                    """
+            }
         } catch {
-            // The trailer pointed somewhere plausible but the track table did not hold up.
             return """
                 "\(inputURL.lastPathComponent)" could not be read as a DiscJuggler image.
 
-                \((error as? CDIError)?.errorDescription ?? error.localizedDescription)
+                \(error.localizedDescription)
                 """
         }
 
@@ -68,6 +86,15 @@ nonisolated enum InputValidator {
         }
 
         return nil
+    }
+
+    /// A note about how `inputURL` will be converted, for input that converts but is worth
+    /// checking afterwards. Unlike `rejectionReason` this never blocks the run.
+    static func advisory(for inputURL: URL, conversionType: ConversionType) -> String? {
+        guard conversionType.chdmanCommand == "createcd" else { return nil }
+        guard let image = try? CDIImage.read(at: inputURL),
+              let plan = try? CDIStager.plan(image, from: inputURL) else { return nil }
+        return plan.advisory
     }
 
     /// Detects a DiscJuggler image by whether its track table actually parses, rather than by a

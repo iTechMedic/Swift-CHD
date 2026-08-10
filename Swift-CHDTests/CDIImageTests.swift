@@ -52,6 +52,35 @@ final class CDIImageTests: XCTestCase {
         XCTAssertEqual(image.tracks.last?.sectorSize, 2336)
     }
 
+    /// Both DiscJuggler record layouts have to read the same. Sonic Adventure uses the shorter
+    /// one, and reading it with the longer one's offsets is what produced "sector size code
+    /// 88989440" - a refusal to convert a disc that was perfectly readable.
+    func testBothRecordLayoutsParseIdentically() throws {
+        let sessions: [[CDIFixture.TrackSpec]] = [
+            [.audio(lba: 0, length: 400, pregap: 150)],
+            [.mode2(lba: 12_000, length: 500, pregap: 150)]
+        ]
+        let long = try CDIImage.read(at: try fixtureURL(
+            CDIFixture.make(sessions: sessions, layout: .long, version: CDIFixture.version35)))
+        let short = try CDIImage.read(at: try fixtureURL(
+            CDIFixture.make(sessions: sessions, layout: .short, version: CDIFixture.version2)))
+
+        XCTAssertEqual(long.tracks, short.tracks)
+        XCTAssertEqual(short.tracks.map(\.length), [400, 500])
+        XCTAssertEqual(short.tracks.map(\.sectorSize), [2352, 2336])
+        XCTAssertEqual(short.tracks.map(\.gdiLBA), [0, 12_000])
+    }
+
+    /// The layout is stated by the record, not by the version word, so a mismatched version must
+    /// not change how the fields are read.
+    func testRecordLayoutIsReadFromTheRecordNotTheVersion() throws {
+        let sessions: [[CDIFixture.TrackSpec]] = [[.mode2(lba: 0, length: 42, pregap: 150)]]
+        let image = try CDIImage.read(at: try fixtureURL(
+            CDIFixture.make(sessions: sessions, layout: .short, version: CDIFixture.version35)))
+
+        XCTAssertEqual(image.tracks.map(\.length), [42])
+    }
+
     /// DiscJuggler counts from the lead-in; GDI counts from track 1's user data 150 sectors later.
     func testGDILBADropsTheLeadIn() throws {
         let data = CDIFixture.make(sessions: [
