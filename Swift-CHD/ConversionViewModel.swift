@@ -165,24 +165,17 @@ final class ConversionViewModel: ObservableObject {
 
     func verifyCHDMan() async {
         // Run verification off the main actor to avoid blocking
-        var path = chdmanPath.trimmingCharacters(in: .whitespaces)
-
-        // Auto-correct if user just entered a directory path
-        if path.hasSuffix("/bin") || path.hasSuffix("/bin/") {
-            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/chdman"
-        }
+        let path = chdmanPath.trimmingCharacters(in: .whitespaces)
 
         let (foundPath, helpText, verified) = await Task.detached {
             var foundPath: String? = nil
             var helpText: String? = nil
             var verified = false
 
-            // If path is absolute and exists
-            if path.hasPrefix("/") {
-                if FileManager.default.isExecutableFile(atPath: path) {
-                    foundPath = path
-                    verified = true
-                }
+            // If path is absolute and names chdman, or the folder holding it
+            if path.hasPrefix("/"), let resolved = SwiftCHDTask.resolveExecutable(path) {
+                foundPath = resolved
+                verified = true
             }
 
             if !verified {
@@ -191,7 +184,7 @@ final class ConversionViewModel: ObservableObject {
                     "/opt/homebrew/bin/chdman", // Apple Silicon
                     "/usr/local/bin/chdman"     // Intel
                 ]
-                for c in candidates where FileManager.default.isExecutableFile(atPath: c) {
+                for c in candidates where SwiftCHDTask.resolveExecutable(c) != nil {
                     foundPath = c
                     verified = true
                     break
@@ -212,7 +205,7 @@ final class ConversionViewModel: ObservableObject {
                     if bash.terminationStatus == 0 {
                         let data = pipe.fileHandleForReading.readDataToEndOfFile()
                         if let str = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                           !str.isEmpty, FileManager.default.isExecutableFile(atPath: str) {
+                           !str.isEmpty, SwiftCHDTask.resolveExecutable(str) != nil {
                             foundPath = str
                             verified = true
                         }
@@ -254,6 +247,22 @@ final class ConversionViewModel: ObservableObject {
             self.chdmanPath = foundPath
         }
         self.chdmanVerified = verified
+    }
+
+    /// Names the file macOS refused, when the error says which one, and points at the usual
+    /// causes. The app is not sandboxed, so this is plain file permissions, not an entitlement.
+    private static func permissionDeniedMessage(for error: NSError) -> String {
+        let path = (error.userInfo[NSFilePathErrorKey] as? String)
+            ?? (error.userInfo[NSURLErrorKey] as? URL)?.path
+        let subject = path.map { "Swift-CHD was not allowed to access:\n\($0)" }
+            ?? "Swift-CHD was not allowed to access a file it needed."
+        return """
+            \(subject)
+
+            Check that you can read the input file and write to the output folder, and that \
+            the chdman path points to the chdman program itself (for example \
+            /opt/homebrew/bin/chdman).
+            """
     }
 
     /// Defaults Single File mode's output to the same folder as the input file, mirroring
@@ -543,7 +552,7 @@ final class ConversionViewModel: ObservableObject {
             if errorDomain == NSCocoaErrorDomain {
                 switch errorCode {
                 case NSFileReadNoPermissionError, NSFileWriteNoPermissionError:
-                    errorMessage = "Permission denied. Go to Xcode -> Target -> Signing & Capabilities -> Remove 'App Sandbox'."
+                    errorMessage = Self.permissionDeniedMessage(for: error)
                 case NSFileNoSuchFileError:
                     errorMessage = "File not found. Please verify input file exists."
                 case NSFileWriteFileExistsError:
@@ -562,8 +571,8 @@ final class ConversionViewModel: ObservableObject {
                     // The error already contains the chdman output
                     errorMessage = error.localizedDescription
                 }
-            } else if errorDomain == NSPOSIXErrorDomain && errorCode == 13 { // EACCES
-                errorMessage = "Permission denied (POSIX error 13). Disable App Sandbox in Xcode."
+            } else if errorDomain == NSPOSIXErrorDomain && errorCode == Int(EACCES) {
+                errorMessage = Self.permissionDeniedMessage(for: error)
             } else {
                 errorMessage = error.localizedDescription
             }

@@ -17,6 +17,7 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
         case cancelled = -2
         case unsupportedInput = -3
         case stalled = -4
+        case launchFailed = -5
     }
 
     /// Guards `currentProcess` and `cancelRequested`, both of which are touched from the
@@ -134,16 +135,13 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
 
         let process = Process()
 
-        // Set up the executable URL
-        let executableURL = URL(fileURLWithPath: chdmanPath)
-
         // Verify the executable exists and is accessible
-        guard FileManager.default.isExecutableFile(atPath: chdmanPath) else {
+        guard let executablePath = Self.resolveExecutable(chdmanPath) else {
             throw NSError(domain: Self.errorDomain, code: ErrorCode.executableNotFound.rawValue,
                          userInfo: [NSLocalizedDescriptionKey: "chdman executable not found or not accessible at: \(chdmanPath)"])
         }
 
-        process.executableURL = executableURL
+        process.executableURL = URL(fileURLWithPath: executablePath)
         process.arguments = arguments
 
         // Set environment to include common paths
@@ -204,7 +202,13 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
             progressQueue.async { processData(data) }
         }
 
-        try process.run()
+        do {
+            try process.run()
+        } catch let error as NSError {
+            throw NSError(domain: Self.errorDomain, code: ErrorCode.launchFailed.rawValue,
+                         userInfo: [NSLocalizedDescriptionKey: "Could not launch chdman at \(executablePath): \(error.localizedDescription)",
+                                    NSUnderlyingErrorKey: error])
+        }
 
         // cancel() may have landed between the isCancelled check and process.run(), in which
         // case it saw no process to kill. Catch that here.
@@ -340,6 +344,28 @@ nonisolated final class SwiftCHDTask: @unchecked Sendable {
             failed: failed,
             skipped: skipped
         )
+    }
+
+    // MARK: - Executable lookup
+
+    /// Resolves what the user typed in the chdman field to a file that can be launched. A folder
+    /// such as `/opt/homebrew/bin` resolves to the `chdman` inside it: `isExecutableFile` alone
+    /// accepts folders (they carry the search bit), and launching one fails with EACCES.
+    /// - Returns: The path to launch, or nil if it names no executable file.
+    static func resolveExecutable(_ path: String) -> String? {
+        let trimmed = path.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return nil }
+
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        var candidate = trimmed
+        if fm.fileExists(atPath: candidate, isDirectory: &isDirectory), isDirectory.boolValue {
+            candidate = (candidate as NSString).appendingPathComponent("chdman")
+        }
+
+        guard fm.fileExists(atPath: candidate, isDirectory: &isDirectory), !isDirectory.boolValue,
+              fm.isExecutableFile(atPath: candidate) else { return nil }
+        return candidate
     }
 
     // MARK: - Output parsing
